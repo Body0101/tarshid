@@ -32,6 +32,13 @@ class ControlEngine {
   bool setRatedPower(size_t relayIndex, float watts, String *error);
   // RATED DYNAMIC END
   bool setEnergyTrackingEnabled(bool enabled, String *error = nullptr);
+  // NIGHT LOCK OPTION START
+  // Toggle the user-controlled Night Lock master switch. When set to false, the
+  // engine will immediately disengage the lock (if it was active) and stop
+  // enforcing the forced-off behavior at night. The choice is persisted to NVS
+  // so it survives a reboot.
+  bool setNightLockOptionEnabled(bool enabled, String *error = nullptr);
+  // NIGHT LOCK OPTION END
   void updateConnectedClients(uint16_t clients);
 
   String buildStateJson() const;

@@ -117,6 +117,11 @@ void initRuntimeDefaults() {
   gRuntime.dayPhase = DayPhase::DAY;
   gRuntime.timeValid = false;
   gRuntime.nightLockActive = false;
+  // NIGHT LOCK OPTION START
+  // Real value is overwritten in loadRuntime() from NVS; this is a safe
+  // pre-load default that keeps the engine dormant until the user opts in.
+  gRuntime.nightLockOptionEnabled = false;
+  // NIGHT LOCK OPTION END
 
   for (size_t i = 0; i < RELAY_COUNT; ++i) {
     gRuntime.relays[i].manualMode = RelayMode::AUTO;

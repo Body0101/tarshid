@@ -188,7 +188,11 @@ namespace
   bool isAllowedWsType(const String &type)
   {
     return type == "time_sync" || type == "set_manual" || type == "set_timer" || type == "cancel_timer" ||
-           type == "set_energy_tracking" || type == "get_state";
+           type == "set_energy_tracking" ||
+           // NIGHT LOCK OPTION START
+           type == "set_night_lock_option" ||
+           // NIGHT LOCK OPTION END
+           type == "get_state";
   }
 
   bool isOtaPath(const String &uri)
@@ -297,7 +301,10 @@ namespace
            event == "manual.changed" || event == "mode.changed" ||
            event == "client.connected" || event == "client.disconnected" ||
            event == "night_lock.activated" || event == "night_lock.released" || event == "relay.night_forced_off" ||
-           event == "energy_tracking.changed";
+           event == "energy_tracking.changed" ||
+           // NIGHT LOCK OPTION START
+           event == "night_lock_option.changed";
+           // NIGHT LOCK OPTION END
   }
 
   bool shouldPersistEventToFlash(const String &jsonLine)
@@ -1506,6 +1513,30 @@ void WebPortal::handleClientMessage(uint8_t clientId, const String &payload)
     }
     return;
   }
+
+  // NIGHT LOCK OPTION START
+  if (type == "set_night_lock_option")
+  {
+    if (!hasOnlyAllowedKeys(doc, {"type", "enabled"}) || !doc["enabled"].is<bool>())
+    {
+      sendCommandAck(clientId, false, "Invalid night lock option request.");
+      return;
+    }
+    const bool enabled = doc["enabled"] | false;
+    String errorText;
+    const bool ok = engine_->setNightLockOptionEnabled(enabled, &errorText);
+    sendCommandAck(clientId, ok,
+                   ok ? String("Night Lock option ") + (enabled ? "enabled." : "disabled.")
+                      : errorText);
+    if (ok)
+    {
+      // Broadcast so any other connected client sees the change immediately,
+      // not just the originator.
+      scheduleStateBroadcast();
+    }
+    return;
+  }
+  // NIGHT LOCK OPTION END
 
   if (type == "get_state")
   {

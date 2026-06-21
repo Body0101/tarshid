@@ -82,9 +82,17 @@ void ControlEngine::tickFast()
     runtime_->timeValid = timeKeeper_->hasValidTime();
 
     // Forced Night Lock:
-    // - Active only when time is valid and current phase is NIGHT.
+    // - Active only when the user has the Night Lock option ENABLED and the
+    //   current phase is NIGHT (with a valid clock).
     // - On transition, force all relays OFF and cancel active timers.
-    const bool shouldNightLock = runtime_->timeValid && runtime_->dayPhase == DayPhase::NIGHT;
+    // - When the user disables the option mid-night, the next tick will
+    //   see shouldNightLock=false and run applyNightLockTransitionLocked(false)
+    //   which releases the lock cleanly (no forced-off side effects).
+    // NIGHT LOCK OPTION START
+    const bool shouldNightLock = runtime_->nightLockOptionEnabled &&
+                                 runtime_->timeValid &&
+                                 runtime_->dayPhase == DayPhase::NIGHT;
+    // NIGHT LOCK OPTION END
     if (shouldNightLock != previousNightLock || runtime_->dayPhase != previousPhase) {
       applyNightLockTransitionLocked(shouldNightLock, nowEpoch);
     }
@@ -496,6 +504,45 @@ bool ControlEngine::setEnergyTrackingEnabled(bool enabled, String *error)
   return updated;
 }
 
+// NIGHT LOCK OPTION START
+bool ControlEngine::setNightLockOptionEnabled(bool enabled, String *error)
+{
+  bool updated = false;
+  withLock([&]()
+           {
+    if (runtime_->nightLockOptionEnabled == enabled) {
+      updated = true;
+      return;
+    }
+    runtime_->nightLockOptionEnabled = enabled;
+    storage_->persistNightLockOptionEnabled(enabled);
+
+    // If the user just turned the option OFF, release the active lock on the
+    // next tick (it will run naturally inside tickFast because the
+    // shouldNightLock computation is now false). We don't force a transition
+    // here because tickFast is the only place that owns the phase clock and
+    // we want to keep transitions coherent with the phase logic.
+    if (!enabled && runtime_->nightLockActive) {
+      // Force an immediate release so the relays don't stay forced OFF until
+      // the next tick. This calls the same transition path tickFast uses, with
+      // a deactivate intent; the helpers will no-op if state is already clear.
+      applyNightLockTransitionLocked(false, nowEpochLocked());
+    }
+
+    publishEventLocked("TIMER",
+                       "night_lock_option.changed",
+                       String("Night Lock option ") + (enabled ? "enabled." : "disabled."),
+                       -1,
+                       true);
+    updated = true; });
+  if (!updated && error && error->isEmpty())
+  {
+    *error = "Could not update night lock option.";
+  }
+  return updated;
+}
+// NIGHT LOCK OPTION END
+
 void ControlEngine::updateConnectedClients(uint16_t clients)
 {
   withLock([&]()
@@ -555,6 +602,12 @@ String ControlEngine::buildStateJson() const
     }
     doc["energyTrackingEnabled"] = runtime_->energyTrackingEnabled;
     doc["nightLock"] = runtime_->nightLockActive;
+    // NIGHT LOCK OPTION START
+    // Surface the user-controlled master switch so the UI can render the
+    // toggle, and let the frontend distinguish "user opted out" from
+    // "it is currently day so the lock happens to be inactive".
+    doc["nightLockOption"] = runtime_->nightLockOptionEnabled;
+    // NIGHT LOCK OPTION END
     JsonArray relays = doc["relays"].to<JsonArray>();
     for (size_t i = 0; i < RELAY_COUNT; ++i) {
       JsonObject relay = relays.add<JsonObject>();
@@ -652,6 +705,22 @@ uint64_t ControlEngine::nowEpochLocked() const
 
 bool ControlEngine::canTurnOnLocked() const
 {
+  // Two independent guards used to live here:
+  // 1) The forced Night Lock (nightLockActive) — always blocks ON when active.
+  // 2) The implicit "night phase = no ON" rule (canTurnOnLocked) that
+  //    silently blocks manual ON, timers, and PIR at night.
+  //
+  // Both are now gated by the user-controlled nightLockOptionEnabled switch:
+  // - nightLockOptionEnabled == true  -> original behavior (forced lock +
+  //   implicit night phase block).
+  // - nightLockOptionEnabled == false -> neither guard fires. The system
+  //   behaves the same way at night as it does during the day, so the user
+  //   can manually turn relays on, schedule timers, and have PIRs trigger
+  //   motion even when it is dark.
+  if (!runtime_->nightLockOptionEnabled)
+  {
+    return true;
+  }
   if (runtime_->nightLockActive)
   {
     return false;

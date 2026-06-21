@@ -2510,6 +2510,11 @@
               <span data-i18n="enable_energy_tracking">Enable timer-only energy tracking</span>
             </label>
 
+            <label class="toggle" id="nightLockOptionRow">
+              <input id="nightLockOptionToggle" type="checkbox">
+              <span data-i18n="enable_night_lock">Enable Night Lock (قفل الليل)</span>
+            </label>
+
             <div class="actions">
               <button id="syncTimeBtn" class="primary">
                 <svg class="icon" style="width:16px;height:16px;">
@@ -2676,6 +2681,7 @@
     const startTimerBtn = document.getElementById("startTimerBtn");
     const cancelTimerBtn = document.getElementById("cancelTimerBtn");
     const energyTrackingToggle = document.getElementById("energyTrackingToggle");
+    const nightLockOptionToggle = document.getElementById("nightLockOptionToggle");
     const refreshBtn = document.getElementById("refreshBtn");
     const syncTimeBtn = document.getElementById("syncTimeBtn");
     const powerDisabledText = document.getElementById("powerDisabledText");
@@ -2783,6 +2789,7 @@
         day_night_advanced_label: "Day / Night details",
         day_night_text: "Day mode: 06:00-18:00 | Night mode: 18:00-06:00",
         enable_energy_tracking: "Enable timer-only energy tracking",
+        enable_night_lock: "Enable Night Lock (قفل الليل)",
         refresh_state: "Refresh State",
         sync_time_now: "Sync Time Now",
         power_consumption_title: "Power Consumption",
@@ -2924,6 +2931,7 @@
         day_night_advanced_label: "تفاصيل النهار / الليل",
         day_night_text: "وضع النهار: 06:00-18:00 | وضع الليل: 18:00-06:00",
         enable_energy_tracking: "تفعيل تتبع الطاقة للمؤقت فقط",
+        enable_night_lock: "تفعيل القفل الليلي (Night Lock)",
         refresh_state: "تحديث الحالة",
         sync_time_now: "مزامنة الوقت الآن",
         power_consumption_title: "استهلاك الطاقة",
@@ -3736,6 +3744,15 @@
       dayNightStatus.className = `pill ${state.nightLock ? "warn" : "good"}`;
       clientsStatus.textContent = t("clients_status", { count: state.connectedClients ?? 0 });
       energyTrackingToggle.checked = !!state.energyTrackingEnabled;
+      // NIGHT LOCK OPTION START
+      // Keep the master-switch toggle in sync with the backend. The "active"
+      // nightLock state and the user-controlled "option" are two different
+      // concepts: nightLockOptionEnabled is the user's preference, nightLock
+      // is whether the forced-off behavior is currently in effect.
+      if (nightLockOptionToggle) {
+        nightLockOptionToggle.checked = !!state.nightLockOption;
+      }
+      // NIGHT LOCK OPTION END
       updateNightLockUi();
     }
 
@@ -3986,6 +4003,17 @@
       }
       sendCommandThenRefresh({ type: "set_energy_tracking", enabled: energyTrackingToggle.checked });
     });
+    // NIGHT LOCK OPTION START
+    // This is the master switch for the forced-off-at-night behavior. It is
+    // intentionally NOT blocked by isNightLockActive() because the whole point
+    // of the toggle is to be able to turn the lock off while it is currently
+    // active (e.g. user forgot to disable it before going to bed).
+    if (nightLockOptionToggle) {
+      nightLockOptionToggle.addEventListener("change", () => {
+        sendCommandThenRefresh({ type: "set_night_lock_option", enabled: nightLockOptionToggle.checked });
+      });
+    }
+    // NIGHT LOCK OPTION END
     pirMappingList.addEventListener("change", (event) => {
       const target = event.target instanceof Element ? event.target : null;
       if (target && target.matches("input[type='checkbox']")) {

@@ -1,6 +1,6 @@
 # ESP32 Smart Home Automation (2 Relays + 3 PIR)
 
-ESP32 smart home controller (2 relays, 3 PIR inputs) that safely coordinates relay actions using a priority-based engine and an optional “Night Lock” safety mode. Motion (PIR), manual toggles, and timed actions are reconciled per-relay so outputs remain conflict-safe and predictable.
+ESP32 smart home controller (2 relays, 3 PIR inputs) that safely coordinates relay actions using a priority-based engine. Motion (PIR), manual toggles, and timed actions are reconciled per-relay so outputs remain conflict-safe and predictable. The optional **Night Lock** safety mode (force-off at night) is now opt-in — toggle it from the System Settings panel, and your choice is remembered across reboots.
 
 Key capabilities:
 
@@ -20,18 +20,24 @@ Key capabilities:
 ```
 smart-home-automation-esp32/
   README.md
+  platformio.ini
   SmartHomeAutomation/
-    SmartHomeAutomation.ino
-    Config.h
-    SystemTypes.h
-    Utils.h
-    TimeKeeper.h/.cpp
-    StorageLayer.h/.cpp
-    ControlEngine.h/.cpp
-    WebPortal.h/.cpp
-    data/
+    src/
+      main.cpp              # PlatformIO / Arduino entry point
+      Config.h
+      SystemTypes.h
+      Utils.h
+      TimeKeeper.h/.cpp
+      StorageLayer.h/.cpp
+      ControlEngine.h/.cpp
+      WebPortal.h/.cpp
+    data/                   # LittleFS image (upload to flash)
       index.html
+      restricted.html
+      unauthorized.html
 ```
+
+The project uses **PlatformIO**. The Arduino entry point is `src/main.cpp`; upload the `data/` folder as a LittleFS image so `/index.html` and the auth pages are available at runtime.
 
 ## 2) Dependencies
 
@@ -60,15 +66,16 @@ Adjust pin numbers and sensor mapping as needed.
 
 ## 4) Build + Upload Steps
 
-1. Open `SmartHomeAutomation/SmartHomeAutomation.ino` in Arduino IDE.
-2. Choose your ESP32 board and COM port.
-3. Upload filesystem first (LittleFS upload tool) so `/index.html` and the HTML pages are available.
-4. Upload firmware.
-5. Connect to the device AP:
+1. Open the project root (`platformio.ini`) in PlatformIO (CLI or VS Code extension).
+2. Build + upload the LittleFS image first so `/index.html` and the HTML pages are available:
+   - `pio run -t uploadfs`
+3. Build + upload the firmware:
+   - `pio run -t upload`
+4. Connect to the device AP:
    - **AP SSID**: `tarshid`
    - **AP password**: `12345678`
    - (Access portal URL is the device softAP IP; captive portal redirects you.)
-6. Open the device portal URL from the softAP IP returned/used by the captive redirect.
+5. Open the device portal URL from the softAP IP returned/used by the captive redirect.
 
 ## 5) Core Logic
 
@@ -87,9 +94,13 @@ Key behaviors:
 - **Timer**:
   - When a timer is active, the relay output follows the timer’s `targetState`.
   - When the timer ends, the relay returns to **`AUTO`** (restores previous relay state via `previousState`).
-- **Night Lock** (safety freeze):
-  - When enabled and time phase is **NIGHT** (06:00–18:00 is DAY), the controller forces **all relays OFF** and cancels active timers.
-  - Certain operations (starting timers, PIR mapping changes, resets, rated power/energy tracking updates) are blocked while Night Lock is active.
+- **Night Lock** (safety freeze, opt-in):
+  - The Night Lock feature is controlled by a user-facing master switch in the System Settings panel of the web UI (label: **“Enable Night Lock (قفل الليل)”**).
+  - When the option is **ON** and the time phase is **NIGHT** (06:00–18:00 is DAY), the controller forces **all relays OFF** and cancels active timers. Manual ON, timer-ON, and PIR motion are all blocked during the night phase.
+  - When the option is **OFF** (default after first boot or firmware upgrade), the controller ignores the night phase entirely. Manual ON, timers, and PIR motion work the same way at night as they do during the day.
+  - The choice is persisted to NVS under the key `night_lock_en` and survives a reboot.
+  - Flipping the option OFF while the lock is currently active releases it on the next control tick (within ~50 ms) — no need to wait for sunrise.
+  - Certain operations that mutate persistent settings (changing PIR mapping, resetting consumption, updating rated power, toggling energy tracking) are still blocked *only* when the lock is currently active — i.e. only when the option is ON and the phase is NIGHT.
 
 ### Timer Lifecycle / Time alignment
 
@@ -102,7 +113,8 @@ Key behaviors:
   - relay manual mode
   - timer plans
   - relay state/source
-  - energy tracking enabled flag
+  - energy tracking enabled flag (`energy_en`)
+  - **Night Lock option / user master switch** (`night_lock_en`, default `false`)
   - PIR mapping
   - rated power (and whether it is locked)
   - periodic housekeeping markers (daily cleanup)
@@ -137,6 +149,7 @@ Only the WebSocket message types listed below are accepted:
 - `set_timer`
 - `cancel_timer`
 - `set_energy_tracking`
+- `set_night_lock_option`
 - `get_state`
 
 ### Client -> ESP32 (request payloads)
@@ -165,7 +178,17 @@ Notes:
 #### 5) `set_energy_tracking`
 - `{"type":"set_energy_tracking","enabled":true}`
 
-#### 6) `get_state`
+#### 6) `set_night_lock_option`
+Toggle the Night Lock master switch. Persists to NVS (`night_lock_en`).
+- `{"type":"set_night_lock_option","enabled":true}`   — enable forced-off at night
+- `{"type":"set_night_lock_option","enabled":false}`  — disable (default)
+
+Notes:
+- The controller replies with `command_ack` (`ok: true/false`).
+- On success a `state_snapshot` is broadcast to all connected clients.
+- This command is intentionally **not** blocked while Night Lock is currently active — the whole point is to be able to turn the lock off mid-night.
+
+#### 7) `get_state`
 - `{"type":"get_state"}`
 
 ### ESP32 -> Client (response/event payloads)
@@ -181,9 +204,16 @@ Controller sends JSON messages of types like:
   - `timer.canceled`
   - `pir.motion`
   - `pir.idle`
-  - `night_lock.activated` / `night_lock.released`
+  - `night_lock.activated` / `night_lock.released`  *(the lock being currently active)*
+  - `night_lock_option.changed`  *(the user toggled the Night Lock master switch)*
   - `energy_update` (energy tracking updates)
   - plus various connectivity/storage events (client connected/disconnected)
+
+The `state_snapshot` payload exposes both the **current lock state** and the **user option** as separate fields, so the UI can render the toggle independently of the day phase:
+
+- `state.nightLock`         — `true` while the lock is actively forcing relays OFF (option ON *and* phase NIGHT)
+- `state.nightLockOption`   — `true` if the user has enabled the Night Lock master switch in Settings
+- `state.energyTrackingEnabled` — `true` if energy tracking is enabled
 
 (Each event includes `ts` epoch and may include `channel`/`relay` and `mac` depending on the event.)
 

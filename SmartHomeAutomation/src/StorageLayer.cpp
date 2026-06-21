@@ -97,6 +97,13 @@ void StorageLayer::loadRuntime(SystemRuntime *runtime)
   // After a page reload, the frontend reads the same live values back through
   // /api/state and WebSocket state_snapshot so the UI matches the saved system state.
   runtime->energyTrackingEnabled = preferences_.getBool("energy_en", false);
+  // NIGHT LOCK OPTION START
+  // Default false so the first boot after the firmware upgrade doesn't suddenly
+  // engage the forced lock. Existing users who were relying on the old
+  // always-on behavior will see the lock disabled and can re-enable it from
+  // the System Settings panel.
+  runtime->nightLockOptionEnabled = preferences_.getBool("night_lock_en", false);
+  // NIGHT LOCK OPTION END
   runtime->relays.resize(RELAY_COUNT);
   runtime->pirs.resize(PIR_COUNT);
   runtime->pirMap.resize(PIR_COUNT);
@@ -472,6 +479,18 @@ void StorageLayer::persistEnergyTrackingEnabled(bool enabled)
   preferences_.putBool("energy_en", enabled);
   unlock();
 }
+
+// NIGHT LOCK OPTION START
+void StorageLayer::persistNightLockOptionEnabled(bool enabled)
+{
+  if (!lock())
+  {
+    return;
+  }
+  preferences_.putBool("night_lock_en", enabled);
+  unlock();
+}
+// NIGHT LOCK OPTION END
 
 void StorageLayer::persistLastCleanupDay(uint32_t dayToken)
 {

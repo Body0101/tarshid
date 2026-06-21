@@ -65,6 +65,10 @@ void setLogsEnabled(bool enabled);
 // STORAGE MANAGEMENT END
 // ACCESS CONTROL END
   void persistEnergyTrackingEnabled(bool enabled);
+  // NIGHT LOCK OPTION START
+  // Persist the user-controlled Night Lock master switch. Survives reboot.
+  void persistNightLockOptionEnabled(bool enabled);
+  // NIGHT LOCK OPTION END
   void persistLastCleanupDay(uint32_t dayToken);
   uint32_t loadLastCleanupDay();
 

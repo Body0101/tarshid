@@ -114,6 +114,14 @@ struct SystemRuntime {
   DayPhase dayPhase;
   bool timeValid;
   bool nightLockActive;
+  // NIGHT LOCK OPTION START
+  // User-controlled master switch for the Night Lock feature. When false, the
+  // engine ignores the day-phase-driven forced lock and lets PIR/manual/timer
+  // behavior run as normal regardless of DAY/NIGHT phase. When true, the
+  // original forced-OFF-at-night behavior is restored. Persisted in NVS so the
+  // choice survives reboots.
+  bool nightLockOptionEnabled;
+  // NIGHT LOCK OPTION END
 };
 
 struct UserAccount {
