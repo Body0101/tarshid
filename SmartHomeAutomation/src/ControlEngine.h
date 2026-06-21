@@ -59,7 +59,7 @@ class ControlEngine {
   bool canTurnOnLocked() const;
   void processPirInputsLocked(uint64_t nowEpoch);
   Decision evaluateRelayLocked(size_t relayIndex, uint64_t nowEpoch);
-  void applyDecisionsLocked(const std::vector<Decision> &decisions, uint64_t nowEpoch);
+  void applyDecisionsLocked(const Decision *decisions, uint64_t nowEpoch);
   uint64_t effectiveOnSecondsLocked(const RelayRuntime &relay, uint64_t nowEpoch) const;
   void closeActiveOnWindowLocked(RelayRuntime &relay, uint64_t nowEpoch);
   bool withLock(const std::function<void()> &fn) const;

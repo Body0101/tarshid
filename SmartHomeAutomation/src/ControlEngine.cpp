@@ -83,7 +83,7 @@ void ControlEngine::tickFast() {
 
     processPirInputsLocked(nowEpoch);
 
-    std::vector<Decision> decisions(RELAY_COUNT);
+    Decision decisions[RELAY_COUNT];
     for (size_t i = 0; i < RELAY_COUNT; ++i) {
       decisions[i] = evaluateRelayLocked(i, nowEpoch);
     }
@@ -631,20 +631,28 @@ void ControlEngine::processPirInputsLocked(uint64_t nowEpoch) {
     }
 
     const bool debouncePassed = (millis() - pir.lastChangeMs) >= PIR_DEBOUNCE_MS;
-    if (!debouncePassed || pir.stableValue == pir.rawValue) {
+    if (!debouncePassed) {
       continue;
     }
 
-    pir.stableValue = pir.rawValue;
+    const bool previousStableValue = pir.stableValue;
+    const bool stableChanged = pir.stableValue != pir.rawValue;
+    if (stableChanged) {
+      pir.stableValue = pir.rawValue;
+    }
+
     if (!pir.stableValue) {
-      // Publish sensor idle transitions so the UI can clear the activity panel.
-      publishEventLocked("TIMER",
-                         "pir.idle",
-                         String(PIR_CONFIG[i].name) + " returned to idle.",
-                         static_cast<int>(i),
-                         true);
+      if (stableChanged) {
+        // Publish sensor idle transitions so the UI can clear the activity panel.
+        publishEventLocked("TIMER",
+                           "pir.idle",
+                           String(PIR_CONFIG[i].name) + " returned to idle.",
+                           static_cast<int>(i),
+                           true);
+      }
       continue;
     }
+
     // Track sensor activity regardless of network presence so the visual
     // activity section stays accurate for connected users.
     pir.lastTriggerEpoch = nowEpoch;
@@ -652,7 +660,9 @@ void ControlEngine::processPirInputsLocked(uint64_t nowEpoch) {
       continue;
     }
     if (!canTurnOnLocked()) {
-      publishEventLocked("ERROR", "pir.blocked", "Motion ignored by night mode.", static_cast<int>(i), true);
+      if (!previousStableValue) {
+        publishEventLocked("ERROR", "pir.blocked", "Motion ignored by night mode.", static_cast<int>(i), true);
+      }
       continue;
     }
 
@@ -671,11 +681,13 @@ void ControlEngine::processPirInputsLocked(uint64_t nowEpoch) {
       }
       relay.autoHoldUntilEpoch = max(relay.autoHoldUntilEpoch, nowEpoch + PIR_HOLD_SECONDS);
     }
-    publishEventLocked("TIMER",
-                       "pir.motion",
-                       String("Motion detected on ") + PIR_CONFIG[i].name + ".",
-                       static_cast<int>(i),
-                       true);
+    if (!previousStableValue) {
+      publishEventLocked("TIMER",
+                         "pir.motion",
+                         String("Motion detected on ") + PIR_CONFIG[i].name + ".",
+                         static_cast<int>(i),
+                         true);
+    }
   }
 }
 
@@ -766,10 +778,7 @@ ControlEngine::Decision ControlEngine::evaluateRelayLocked(size_t relayIndex, ui
   return out;
 }
 
-void ControlEngine::applyDecisionsLocked(const std::vector<Decision> &decisions, uint64_t nowEpoch) {
-  if (decisions.size() < RELAY_COUNT) {
-    return;
-  }
+void ControlEngine::applyDecisionsLocked(const Decision *decisions, uint64_t nowEpoch) {
   for (size_t i = 0; i < RELAY_COUNT; ++i) {
     RelayRuntime &relay = runtime_->relays[i];
     const RelayState oldState = relay.appliedState;
