@@ -5,13 +5,14 @@ ESP32 smart home controller (2 relays, 3 PIR inputs) that safely coordinates rel
 Key capabilities:
 
 - Wi‑Fi captive portal (AP) + optional STA network
-- WebSocket live updates + offline notification buffering (pending queue)
+- WebSocket live updates for relay, timer, PIR, energy, and system events
 - Conflict-safe relay control:
-  - PIR motion extends an AUTO “hold” window (only when relay is in AUTO and no timer is active)
+  - PIR motion extends an AUTO “hold” window while the debounced PIR level remains active
   - Timers drive relay outputs and restore AUTO at end
   - Night Lock forces all relays OFF and cancels active timers
 - Optional access control (MAC-based auth + restricted/unauthorized pages)
-- Persistent configuration (Preferences) + event logs + pending notifications (LittleFS)
+- Persistent configuration in Preferences/NVS; LittleFS is used for web UI assets only
+- Activity History storage and the Activity Log UI have been removed to reduce flash writes and save space
 - FreeRTOS task split + watchdog safety
 
 ## 1) Folder Layout
@@ -81,6 +82,7 @@ Key behaviors:
 
 - **PIR motion**:
   - PIR events extend an “auto hold” window **only when the relay is in `AUTO` mode** and a timer is not active on that relay.
+  - The hold window is level-triggered: as long as the debounced PIR input remains active, the controller extends the hold time. Motion events are still published only on the inactive-to-active edge to avoid event spam.
   - If a relay is `MANUAL ON/OFF`, PIR does not override it.
 - **Timer**:
   - When a timer is active, the relay output follows the timer’s `targetState`.
@@ -106,9 +108,16 @@ Key behaviors:
   - periodic housekeeping markers (daily cleanup)
   - user activity log controls (login inactivity handling)
 - **LittleFS**:
-  - event log file (`/logs.jsonl`)
-  - pending notifications buffer (`/pending.jsonl`)
-- Daily cleanup is controlled by `LOG_RETENTION_DAYS` (and additional size caps).
+  - web interface files such as `/index.html`, `/restricted.html`, and `/unauthorized.html`
+  - no activity history, event log, or pending notification files are written at runtime
+- Daily log cleanup is now a no-op because file-backed activity history has been removed.
+
+### Runtime memory / flash-wear notes
+
+- `ControlEngine::tickFast()` uses a fixed-size stack array for relay decisions, avoiding heap allocation in the high-frequency control loop.
+- Real-time event generation remains active for WebSocket clients.
+- Activity history persistence is disabled: `StorageLayer` log/pending methods are no-ops and `/api/logs` returns an empty JSON array (`[]`) for frontend compatibility.
+- The frontend no longer renders the Activity Log panel or fetches `/api/logs`.
 
 ## 6) Time Synchronization
 

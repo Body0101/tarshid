@@ -1679,124 +1679,6 @@
     }
 
     /* ============================================================
-       LOGS
-       ============================================================ */
-    .log-toolbar {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      margin-bottom: 14px;
-    }
-
-    .log-count {
-      font-size: 0.82rem;
-      font-weight: 700;
-      color: var(--muted);
-      padding: 5px 11px;
-      border-radius: var(--radius-pill);
-      background: var(--surface-2);
-      border: 1px solid var(--border);
-    }
-
-    .log-list {
-      list-style: none;
-      margin: 0;
-      padding: 0;
-      display: grid;
-      gap: 10px;
-      max-height: 480px;
-      overflow: auto;
-      padding-right: 6px;
-    }
-
-    .log-list::-webkit-scrollbar {
-      width: 8px;
-    }
-
-    .log-list::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
-    .log-list::-webkit-scrollbar-thumb {
-      background: var(--border-strong);
-      border-radius: var(--radius-pill);
-    }
-
-    .log-item {
-      padding: 14px 16px;
-      border-radius: var(--radius);
-      border: 1.5px solid var(--border);
-      background: var(--surface);
-      display: grid;
-      gap: 7px;
-      transition: border-color 160ms ease;
-    }
-
-    .log-item:hover {
-      border-color: var(--border-strong);
-    }
-
-    .log-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-
-    .log-time {
-      font-size: 0.78rem;
-      color: var(--muted);
-      font-weight: 700;
-    }
-
-    .log-message {
-      color: var(--text);
-      font-size: 0.92rem;
-      line-height: 1.55;
-    }
-
-    .log-meta {
-      font-size: 0.76rem;
-      color: var(--muted);
-      word-break: break-all;
-    }
-
-    .log-badge {
-      padding: 4px 10px;
-      border-radius: var(--radius-pill);
-      font-size: 0.68rem;
-      font-weight: 800;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-    }
-
-    .log-badge.ON {
-      background: var(--on-soft);
-      color: var(--on-2);
-    }
-
-    .log-badge.OFF {
-      background: var(--off-soft);
-      color: var(--off);
-    }
-
-    .log-badge.TIMER {
-      background: var(--warn-soft);
-      color: var(--warn);
-    }
-
-    .log-badge.ERROR {
-      background: var(--off-soft);
-      color: var(--error);
-    }
-
-    [data-theme="dark"] .log-badge.ON {
-      color: var(--on);
-    }
-
-    /* ============================================================
        TOAST
        ============================================================ */
     .toast {
@@ -1939,7 +1821,6 @@
     html[dir="rtl"] .actions,
     html[dir="rtl"] .timer-info__top,
     html[dir="rtl"] .timer-progress__labels,
-    html[dir="rtl"] .log-top,
     html[dir="rtl"] .power-item-head,
     html[dir="rtl"] .power-line,
     html[dir="rtl"] .quicknav,
@@ -2491,9 +2372,6 @@
       <a class="nav-chip" href="#sensorsPanel"><svg class="icon">
           <use href="#i-radar" />
         </svg><span data-i18n="nav_sensors">Sensors</span></a>
-      <a class="nav-chip" href="#logsPanel"><svg class="icon">
-          <use href="#i-list" />
-        </svg><span data-i18n="nav_logs">Logs</span></a>
     </nav>
 
     <!-- ============== 3. RELAY CONTROL ============== -->
@@ -2695,26 +2573,6 @@
       <div id="sensorIndicatorList" class="sensor-grid"></div>
     </section>
 
-    <!-- ============== 10. ACTIVITY LOG ============== -->
-    <section class="panel" id="logsPanel" data-panel="logs">
-      <header class="panel-head">
-        <div class="panel-title">
-          <div class="panel-icon"><svg class="icon">
-              <use href="#i-list" />
-            </svg></div>
-          <div>
-            <h2 data-i18n="activity_log_title">Activity Log</h2>
-            <p data-i18n="logs_note">Relay actions, timer events, warnings, and system activity.</p>
-          </div>
-        </div>
-        <div class="panel-tag" data-i18n="history_tag">History</div>
-      </header>
-      <div class="log-toolbar">
-        <span class="log-count" id="logCount">0 entries</span>
-      </div>
-      <ul id="logList" class="log-list"></ul>
-    </section>
-
   </main>
 
   <!-- ============== 11. FOOTER ============== -->
@@ -2798,8 +2656,6 @@
     const relayContainer = document.getElementById("relayContainer");
     const powerList = document.getElementById("powerList");
     const statsList = document.getElementById("statsList");
-    const logList = document.getElementById("logList");
-    const logCount = document.getElementById("logCount");
     const pirMappingList = document.getElementById("pirMappingList");
     const savePirMappingBtn = document.getElementById("savePirMappingBtn");
     const sensorIndicatorList = document.getElementById("sensorIndicatorList");
@@ -2876,7 +2732,6 @@
     let currentLanguage = localStorage.getItem(LANG_KEY) === "ar" ? "ar" : "en";
     let currentSyncText = "Sync: Idle";
     let currentSyncType = "idle";
-    const logHistory = [];
 
     /* ==========================================
        I18N
@@ -2894,7 +2749,6 @@
         nav_power: "Power",
         nav_stats: "Stats",
         nav_settings: "Settings",
-        nav_logs: "Logs",
         connection_label: "Connection",
         sync_label: "Time Sync",
         mode_label: "Operating Mode",
@@ -2946,13 +2800,8 @@
         timer_statistics_title: "Usage Statistics",
         stats_note: "How often timers run and total accumulated minutes.",
         stats_tag: "Metrics",
-        activity_log_title: "Activity Log",
-        logs_note: "Relay actions, timer events, warnings, and system activity.",
-        logs_kicker: "History",
-        history_tag: "History",
         relay_advanced_label: "Advanced details",
         relay_timer_advanced_label: "Live timer view",
-        sensor_advanced_label: "Trigger history",
         power_advanced_label: "Configure rated power",
         developed_by: "Developed by",
         contact_title: "Contact",
@@ -3004,15 +2853,9 @@
         pir: "PIR",
         none: "NONE",
         mixed: "MIXED",
-        log_badge_on: "ON",
-        log_badge_off: "OFF",
-        log_badge_timer: "TIMER",
-        log_badge_error: "ERROR",
-        log_count_label: "{count} entries",
         toast_ws_offline_reconnecting: "WebSocket offline, reconnecting...",
         toast_time_sync_failed: "Time sync request failed.",
         toast_state_api_waiting: "State API not ready. Waiting for WebSocket...",
-        toast_load_history_failed: "Could not load history logs.",
         toast_night_lock_active: "Night Lock Active",
         toast_sensor_mapping_saved: "Sensor mapping saved.",
         toast_save_failed: "Save failed.",
@@ -3047,7 +2890,6 @@
         nav_power: "الطاقة",
         nav_stats: "الإحصاءات",
         nav_settings: "الإعدادات",
-        nav_logs: "السجل",
         connection_label: "الاتصال",
         sync_label: "مزامنة الوقت",
         mode_label: "وضع التشغيل",
@@ -3099,13 +2941,8 @@
         timer_statistics_title: "إحصاءات الاستخدام",
         stats_note: "عدد مرات تشغيل المؤقتات وإجمالي الدقائق.",
         stats_tag: "المقاييس",
-        activity_log_title: "سجل النشاط",
-        logs_note: "إجراءات المرحّل، أحداث المؤقت، التحذيرات، ونشاط النظام.",
-        logs_kicker: "السجل",
-        history_tag: "السجل",
         relay_advanced_label: "تفاصيل متقدمة",
         relay_timer_advanced_label: "عرض المؤقت الحي",
-        sensor_advanced_label: "سجل التشغيل",
         power_advanced_label: "إعداد القدرة المقننة",
         developed_by: "تطوير",
         contact_title: "تواصل",
@@ -3157,15 +2994,9 @@
         pir: "مستشعر PIR",
         none: "لا يوجد",
         mixed: "مختلط",
-        log_badge_on: "تشغيل",
-        log_badge_off: "إيقاف",
-        log_badge_timer: "مؤقت",
-        log_badge_error: "خطأ",
-        log_count_label: "{count} سجلات",
         toast_ws_offline_reconnecting: "اتصال WebSocket غير متصل، جارٍ إعادة الاتصال...",
         toast_time_sync_failed: "فشل طلب مزامنة الوقت.",
         toast_state_api_waiting: "واجهة الحالة غير جاهزة بعد. جارٍ انتظار WebSocket...",
-        toast_load_history_failed: "تعذر تحميل سجل الأحداث السابق.",
         toast_night_lock_active: "القفل الليلي نشط",
         toast_sensor_mapping_saved: "تم حفظ ربط المستشعرات.",
         toast_save_failed: "فشل الحفظ.",
@@ -3197,7 +3028,6 @@
       "WebSocket offline, reconnecting...": "toast_ws_offline_reconnecting",
       "Time sync request failed.": "toast_time_sync_failed",
       "State API not ready. Waiting for WebSocket...": "toast_state_api_waiting",
-      "Could not load history logs.": "toast_load_history_failed",
       "Night Lock Active": "toast_night_lock_active",
       "Sensor mapping saved.": "toast_sensor_mapping_saved",
       "Save failed.": "toast_save_failed",
@@ -3290,7 +3120,6 @@
       setConnectionStatus(socketReady);
       setSyncStatus(currentSyncText, currentSyncType);
       if (state) renderState();
-      renderLogList();
     }
 
     function reconcileSyncStatusFromState(snapshot) {
@@ -3919,48 +3748,6 @@
       renderStats();
     }
 
-    function renderLogList() {
-      logList.innerHTML = logHistory.map((entry) => {
-        const type = LOG_TYPES.has(entry.type) ? entry.type : "TIMER";
-        const badgeKey = {
-          ON: "log_badge_on", OFF: "log_badge_off",
-          TIMER: "log_badge_timer", ERROR: "log_badge_error"
-        }[type] || "log_badge_timer";
-        const relay = Number.isInteger(entry.relay) && entry.relay >= 0 ? relayByIndex(entry.relay) : null;
-        const relayLabel = relay
-          ? relayDisplayName(relay, entry.relay)
-          : Number.isInteger(entry.relay) && entry.relay >= 0
-            ? t("relay_label", { index: entry.relay + 1 })
-            : t("system_label");
-        const macLabel = entry.mac || "SYSTEM";
-        const timeLabel = entry.time || formatTimestamp(entry.ts);
-        const eventLabel = entry.event ? ` | ${entry.event}` : "";
-        return `
-        <li class="log-item ${type}">
-          <div class="log-top">
-            <span class="log-badge ${type}">${escapeHtml(t(badgeKey))}</span>
-            <span class="log-time">${escapeHtml(timeLabel)}</span>
-          </div>
-          <div class="log-message">${escapeHtml(entry.message || entry.msg || "")}</div>
-          <div class="log-meta">${escapeHtml(`${relayLabel} | MAC ${macLabel}${eventLabel}`)}</div>
-        </li>
-      `;
-      }).join("");
-      if (logCount) logCount.textContent = t("log_count_label", { count: logHistory.length });
-    }
-
-    function addLogEntry(entry, prepend = true) {
-      if (!entry) return;
-      const type = LOG_TYPES.has(entry.type) ? entry.type : "TIMER";
-      const message = entry.message || entry.msg || "";
-      if (!message) return;
-      const normalized = { ...entry, type, message };
-      if (prepend) logHistory.unshift(normalized);
-      else logHistory.push(normalized);
-      while (logHistory.length > 180) logHistory.pop();
-      renderLogList();
-    }
-
     /* ==========================================
        Network Helpers (UNCHANGED)
        ========================================== */
@@ -4019,20 +3806,6 @@
         renderState();
       } catch {
         showToast("State API not ready. Waiting for WebSocket...");
-      }
-    }
-    async function loadInitialLogs() {
-      try {
-        const response = await fetch("/api/logs?limit=90");
-        const logs = await response.json();
-        if (Array.isArray(logs)) logs.forEach((entry) => addLogEntry(entry, false));
-      } catch {
-        addLogEntry({
-          type: "ERROR", event: "ui.logs",
-          message: "Could not load history logs.",
-          ts: Math.floor(Date.now() / 1000),
-          relay: -1, mac: "SYSTEM"
-        }, false);
       }
     }
     async function savePirMapping() {
@@ -4157,7 +3930,6 @@
             renderPower();
           }
         }
-        addLogEntry(msg, true);
       }
     }
     function connectSocket() {
@@ -4619,7 +4391,6 @@
       setConnectionStatus(false);
       setSyncStatus("Sync: Idle");
       await syncDeviceTime();
-      await loadInitialLogs();
       await loadInitialState();
       connectSocket();
       setInterval(() => {
