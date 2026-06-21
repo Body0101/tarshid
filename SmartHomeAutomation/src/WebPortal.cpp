@@ -880,8 +880,7 @@ Serial.printf("[AddUser] Requester OK: %s\n", requester->macAddress);
       server_.send(400, "application/json", "{\"ok\":false,\"msg\":\"Invalid query\"}");
       return;
     }
-    const uint16_t limit = static_cast<uint16_t>(server_.hasArg("limit") ? server_.arg("limit").toInt() : 80);
-    server_.send(200, "application/json", storage_->readRecentLogsJson(limit)); });
+    server_.send(200, "application/json", "[]"); });
 
   server_.on("/api/time", HTTP_GET, [this]()
              {

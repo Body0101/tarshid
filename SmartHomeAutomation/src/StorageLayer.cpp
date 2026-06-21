@@ -3,7 +3,6 @@
 #include <mbedtls/sha256.h>
 #include <cstring>
 #include <ArduinoJson.h>
-#include <vector>
 
 #include "Config.h"
 
@@ -75,15 +74,6 @@ bool StorageLayer::begin()
     logsEnabled_ = preferences_.getBool(LOG_ENABLED_KEY, true);
   }
   unlock();
-  if (ok)
-  {
-    // Keep runtime files present after cold boot, factory reset, or a blank
-    // filesystem so later read/append paths do not fail unexpectedly.
-    for (const char *path : kRuntimeFiles)
-    {
-      ensureFileExists(path);
-    }
-  }
   return ok;
 }
 
@@ -506,232 +496,35 @@ uint32_t StorageLayer::loadLastCleanupDay()
 
 void StorageLayer::appendEvent(uint64_t epoch, const String &type, const String &message, int channel)
 {
-  if (!lock())
-  {
-    return;
-  }
-  JsonDocument doc;
-  doc["ts"] = epoch;
-  doc["type"] = type;
-  doc["msg"] = message;
-  if (channel >= 0)
-  {
-    doc["channel"] = channel;
-  }
-  String line;
-  serializeJson(doc, line);
-  appendLine(FILE_LOGS, line);
-  trimFileBySize(FILE_LOGS, LOG_MAX_BYTES);
-  unlock();
 }
 
 void StorageLayer::appendPending(const String &jsonLine)
 {
-  if (!lock())
-  {
-    return;
-  }
-  appendLine(FILE_PENDING, jsonLine);
-  trimFileBySize(FILE_PENDING, PENDING_MAX_BYTES);
-  unlock();
 }
 
 void StorageLayer::appendEventJson(const String &jsonLine)
 {
-  // STORAGE MANAGEMENT: when logging is disabled, events are still broadcast
-  // over WebSocket but are never written to flash (saves LittleFS space).
-  if (!logsEnabled_) return;
-  if (!lock())
-  {
-    return;
-  }
-  appendLine(FILE_LOGS, jsonLine);
-  trimFileBySize(FILE_LOGS, LOG_MAX_BYTES);
-  unlock();
 }
 
 String StorageLayer::readRecentLogsJson(uint16_t limit) const
 {
-  if (!lock())
-  {
-    return "[]";
-  }
-  if (limit == 0)
-  {
-    limit = 1;
-  }
-  if (limit > LOG_FETCH_MAX_ITEMS)
-  {
-    limit = LOG_FETCH_MAX_ITEMS;
-  }
-  if (!LittleFS.exists(FILE_LOGS))
-  {
-    ensureFileExists(FILE_LOGS);
-    unlock();
-    return "[]";
-  }
-  File file = LittleFS.open(FILE_LOGS, FILE_READ);
-  if (!file)
-  {
-    unlock();
-    return "[]";
-  }
-
-  std::vector<String> ring;
-  ring.reserve(limit);
-  while (file.available())
-  {
-    String line = file.readStringUntil('\n');
-    line.trim();
-    if (line.isEmpty())
-    {
-      continue;
-    }
-    ring.push_back(line);
-    if (ring.size() > limit)
-    {
-      ring.erase(ring.begin());
-    }
-  }
-  file.close();
-
-  String json = "[";
-  for (size_t i = 0; i < ring.size(); ++i)
-  {
-    if (i > 0)
-    {
-      json += ",";
-    }
-    json += ring[i];
-  }
-  json += "]";
-  unlock();
-  return json;
+  return "[]";
 }
 
 void StorageLayer::flushPending(const std::function<void(const String &line)> &sender)
 {
-  if (!lock())
-  {
-    return;
-  }
-  if (!LittleFS.exists(FILE_PENDING))
-  {
-    ensureFileExists(FILE_PENDING);
-    unlock();
-    return;
-  }
-  File input = LittleFS.open(FILE_PENDING, FILE_READ);
-  if (!input)
-  {
-    unlock();
-    return;
-  }
-  while (input.available())
-  {
-    String line = input.readStringUntil('\n');
-    line.trim();
-    if (line.isEmpty())
-    {
-      continue;
-    }
-    sender(line);
-  }
-  input.close();
-  LittleFS.remove(FILE_PENDING);
-  unlock();
 }
 
 void StorageLayer::cleanupDaily(uint64_t nowEpoch)
 {
-  if (!lock())
-  {
-    return;
-  }
-  const uint64_t retentionSeconds = static_cast<uint64_t>(LOG_RETENTION_DAYS) * 86400ULL;
-  uint64_t minEpoch = 0;
-  if (nowEpoch > retentionSeconds)
-  {
-    minEpoch = nowEpoch - retentionSeconds;
-  }
-  compactByAge(FILE_LOGS, minEpoch);
-  compactByAge(FILE_PENDING, minEpoch);
-  trimFileBySize(FILE_LOGS, LOG_MAX_BYTES);
-  trimFileBySize(FILE_PENDING, PENDING_MAX_BYTES);
-  unlock();
 }
 
 void StorageLayer::appendLine(const char *path, const String &line) const
 {
-  if (!ensureFileExists(path))
-  {
-    return;
-  }
-  File file = LittleFS.open(path, FILE_APPEND);
-  if (!file)
-  {
-    return;
-  }
-  file.println(line);
-  file.close();
 }
 
 void StorageLayer::trimFileBySize(const char *path, uint32_t maxBytes) const
 {
-  if (!LittleFS.exists(path))
-  {
-    ensureFileExists(path);
-    return;
-  }
-  File file = LittleFS.open(path, FILE_READ);
-  if (!file)
-  {
-    return;
-  }
-  const size_t currentSize = file.size();
-  if (currentSize <= maxBytes)
-  {
-    file.close();
-    return;
-  }
-
-  std::vector<String> lines;
-  lines.reserve(80);
-  const uint32_t target = static_cast<uint32_t>(maxBytes * 0.7f);
-  while (file.available())
-  {
-    String line = file.readStringUntil('\n');
-    line.trim();
-    if (!line.isEmpty())
-    {
-      lines.push_back(line);
-    }
-  }
-  file.close();
-
-  size_t bytes = 0;
-  size_t start = lines.size();
-  while (start > 0)
-  {
-    const size_t lineBytes = lines[start - 1].length() + 1;
-    if (bytes + lineBytes > target && start < lines.size())
-    {
-      break;
-    }
-    bytes += lineBytes;
-    --start;
-  }
-
-  File output = LittleFS.open(path, FILE_WRITE);
-  if (!output)
-  {
-    return;
-  }
-  for (size_t i = start; i < lines.size(); ++i)
-  {
-    output.println(lines[i]);
-  }
-  output.close();
 }
 
 bool StorageLayer::parseEpochFromLine(const String &line, uint64_t *epochOut) const
@@ -756,45 +549,6 @@ bool StorageLayer::parseEpochFromLine(const String &line, uint64_t *epochOut) co
 
 void StorageLayer::compactByAge(const char *path, uint64_t minEpochToKeep) const
 {
-  if (!LittleFS.exists(path))
-  {
-    ensureFileExists(path);
-    return;
-  }
-  File input = LittleFS.open(path, FILE_READ);
-  if (!input)
-  {
-    return;
-  }
-
-  std::vector<String> keptLines;
-  keptLines.reserve(120);
-  while (input.available())
-  {
-    String line = input.readStringUntil('\n');
-    line.trim();
-    if (line.isEmpty())
-    {
-      continue;
-    }
-    uint64_t epoch = 0;
-    if (!parseEpochFromLine(line, &epoch) || epoch >= minEpochToKeep)
-    {
-      keptLines.push_back(line);
-    }
-  }
-  input.close();
-
-  File output = LittleFS.open(path, FILE_WRITE);
-  if (!output)
-  {
-    return;
-  }
-  for (const String &line : keptLines)
-  {
-    output.println(line);
-  }
-  output.close();
 }
 
 bool StorageLayer::lock() const {
