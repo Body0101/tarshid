@@ -69,6 +69,9 @@ void setLogsEnabled(bool enabled);
   // Persist the user-controlled Night Lock master switch. Survives reboot.
   void persistNightLockOptionEnabled(bool enabled);
   // NIGHT LOCK OPTION END
+  // PIR HOLD TIME START
+  void persistPirHoldTime(uint32_t seconds);
+  // PIR HOLD TIME END
   void persistLastCleanupDay(uint32_t dayToken);
   uint32_t loadLastCleanupDay();
 

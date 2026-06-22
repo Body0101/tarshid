@@ -104,6 +104,9 @@ void StorageLayer::loadRuntime(SystemRuntime *runtime)
   // the System Settings panel.
   runtime->nightLockOptionEnabled = preferences_.getBool("night_lock_en", false);
   // NIGHT LOCK OPTION END
+  // PIR HOLD TIME START
+  runtime->pirHoldSeconds = preferences_.getUInt(PIR_HOLD_KEY, PIR_HOLD_DEFAULT);
+  // PIR HOLD TIME END
   runtime->relays.resize(RELAY_COUNT);
   runtime->pirs.resize(PIR_COUNT);
   runtime->pirMap.resize(PIR_COUNT);
@@ -491,6 +494,18 @@ void StorageLayer::persistNightLockOptionEnabled(bool enabled)
   unlock();
 }
 // NIGHT LOCK OPTION END
+
+// PIR HOLD TIME START
+void StorageLayer::persistPirHoldTime(uint32_t seconds)
+{
+  if (!lock())
+  {
+    return;
+  }
+  preferences_.putUInt(PIR_HOLD_KEY, seconds);
+  unlock();
+}
+// PIR HOLD TIME END
 
 void StorageLayer::persistLastCleanupDay(uint32_t dayToken)
 {

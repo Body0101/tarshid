@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -2515,6 +2515,16 @@
               <span data-i18n="enable_night_lock">Enable Night Lock (قفل الليل)</span>
             </label>
 
+            <!-- PIR HOLD TIME START -->
+            <label class="field" id="pirHoldRow">
+              <span data-i18n="pir_hold_time_label">PIR Hold Time (seconds)</span>
+              <div style="display: flex; gap: 8px;">
+                <input id="pirHoldInput" type="number" min="10" max="3600" step="1">
+                <button id="savePirHoldBtn" class="primary" style="height: unset; padding: 10px 16px; border-radius: 12px;" data-i18n="save_btn">Save</button>
+              </div>
+            </label>
+            <!-- PIR HOLD TIME END -->
+
             <div class="actions">
               <button id="syncTimeBtn" class="primary">
                 <svg class="icon" style="width:16px;height:16px;">
@@ -2682,6 +2692,10 @@
     const cancelTimerBtn = document.getElementById("cancelTimerBtn");
     const energyTrackingToggle = document.getElementById("energyTrackingToggle");
     const nightLockOptionToggle = document.getElementById("nightLockOptionToggle");
+    // PIR HOLD TIME START
+    const pirHoldInput = document.getElementById("pirHoldInput");
+    const savePirHoldBtn = document.getElementById("savePirHoldBtn");
+    // PIR HOLD TIME END
     const refreshBtn = document.getElementById("refreshBtn");
     const syncTimeBtn = document.getElementById("syncTimeBtn");
     const powerDisabledText = document.getElementById("powerDisabledText");
@@ -2790,6 +2804,11 @@
         day_night_text: "Day mode: 06:00-18:00 | Night mode: 18:00-06:00",
         enable_energy_tracking: "Enable timer-only energy tracking",
         enable_night_lock: "Enable Night Lock (قفل الليل)",
+        // PIR HOLD TIME START
+        pir_hold_time_label: "PIR Hold Time (seconds)",
+        pir_hold_time_invalid: "PIR hold time must be between 10 and 3600 seconds.",
+        save_btn: "Save",
+        // PIR HOLD TIME END
         refresh_state: "Refresh State",
         sync_time_now: "Sync Time Now",
         power_consumption_title: "Power Consumption",
@@ -2932,6 +2951,11 @@
         day_night_text: "وضع النهار: 06:00-18:00 | وضع الليل: 18:00-06:00",
         enable_energy_tracking: "تفعيل تتبع الطاقة للمؤقت فقط",
         enable_night_lock: "تفعيل القفل الليلي (Night Lock)",
+        // PIR HOLD TIME START
+        pir_hold_time_label: "زمن استبقاء مستشعر الحركة (ثواني)",
+        pir_hold_time_invalid: "يجب أن يكون زمن استبقاء مستشعر الحركة بين 10 و 3600 ثانية.",
+        save_btn: "حفظ",
+        // PIR HOLD TIME END
         refresh_state: "تحديث الحالة",
         sync_time_now: "مزامنة الوقت الآن",
         power_consumption_title: "استهلاك الطاقة",
@@ -3752,6 +3776,11 @@
       if (nightLockOptionToggle) {
         nightLockOptionToggle.checked = !!state.nightLockOption;
       }
+      // PIR HOLD TIME START
+      if (pirHoldInput && document.activeElement !== pirHoldInput && state.pirHoldSeconds !== undefined) {
+        pirHoldInput.value = state.pirHoldSeconds;
+      }
+      // PIR HOLD TIME END
       // NIGHT LOCK OPTION END
       updateNightLockUi();
     }
@@ -4013,6 +4042,18 @@
         sendCommandThenRefresh({ type: "set_night_lock_option", enabled: nightLockOptionToggle.checked });
       });
     }
+    // PIR HOLD TIME START
+    if (savePirHoldBtn && pirHoldInput) {
+      savePirHoldBtn.addEventListener("click", () => {
+        const val = parseInt(pirHoldInput.value, 10);
+        if (isNaN(val) || val < 10 || val > 3600) {
+          showToast(t("pir_hold_time_invalid") || "PIR hold time must be between 10 and 3600 seconds.");
+          return;
+        }
+        sendCommandThenRefresh({ type: "set_pir_hold_time", holdTime: val });
+      });
+    }
+    // PIR HOLD TIME END
     // NIGHT LOCK OPTION END
     pirMappingList.addEventListener("change", (event) => {
       const target = event.target instanceof Element ? event.target : null;

@@ -192,6 +192,9 @@ namespace
            // NIGHT LOCK OPTION START
            type == "set_night_lock_option" ||
            // NIGHT LOCK OPTION END
+           // PIR HOLD TIME START
+           type == "set_pir_hold_time" ||
+           // PIR HOLD TIME END
            type == "get_state";
   }
 
@@ -1026,6 +1029,52 @@ Serial.printf("[AddUser] Requester OK: %s\n", requester->macAddress);
     server_.send(ok ? 200 : 400, "application/json", payload); });
   // RATED DYNAMIC END
 
+  // PIR HOLD TIME START
+  server_.on("/api/settings/pirHoldTime", HTTP_POST, [this]()
+             {
+    JsonDocument response;
+    response["ok"] = false;
+    const String body = server_.arg("plain");
+    if (body.isEmpty() || body.length() > MAX_HTTP_BODY_BYTES || containsBlockedInputTokens(body)) {
+      response["msg"] = "Invalid JSON body.";
+      String payload;
+      serializeJson(response, payload);
+      server_.send(400, "application/json", payload);
+      return;
+    }
+
+    JsonDocument doc;
+    if (deserializeJson(doc, body) || !hasOnlyAllowedKeys(doc, {"holdTime"})) {
+      response["msg"] = "Invalid JSON body.";
+      String payload;
+      serializeJson(response, payload);
+      server_.send(400, "application/json", payload);
+      return;
+    }
+
+    if (doc["holdTime"].isNull() || !doc["holdTime"].is<uint32_t>()) {
+      response["msg"] = "Missing or invalid holdTime value.";
+      String payload;
+      serializeJson(response, payload);
+      server_.send(400, "application/json", payload);
+      return;
+    }
+
+    const uint32_t holdTime = doc["holdTime"].as<uint32_t>();
+    String errorText;
+    const bool ok = engine_->setPirHoldTime(holdTime, &errorText);
+
+    response["ok"] = ok;
+    response["msg"] = ok ? "PIR hold time saved." : errorText;
+    String payload;
+    serializeJson(response, payload);
+    server_.send(ok ? 200 : 400, "application/json", payload);
+    if (ok) {
+      scheduleStateBroadcast();
+    }
+  });
+  // PIR HOLD TIME END
+
   auto setTimeHandler = [this]()
   {
     const String body = server_.arg("plain");
@@ -1537,6 +1586,26 @@ void WebPortal::handleClientMessage(uint8_t clientId, const String &payload)
     return;
   }
   // NIGHT LOCK OPTION END
+
+  // PIR HOLD TIME START
+  if (type == "set_pir_hold_time")
+  {
+    if (!hasOnlyAllowedKeys(doc, {"type", "holdTime"}) || !doc["holdTime"].is<uint32_t>())
+    {
+      sendCommandAck(clientId, false, "Invalid PIR hold time request.");
+      return;
+    }
+    const uint32_t holdTime = doc["holdTime"].as<uint32_t>();
+    String errorText;
+    const bool ok = engine_->setPirHoldTime(holdTime, &errorText);
+    sendCommandAck(clientId, ok, ok ? "PIR hold time updated successfully." : errorText);
+    if (ok)
+    {
+      scheduleStateBroadcast();
+    }
+    return;
+  }
+  // PIR HOLD TIME END
 
   if (type == "get_state")
   {

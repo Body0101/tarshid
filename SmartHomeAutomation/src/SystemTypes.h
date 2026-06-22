@@ -122,6 +122,7 @@ struct SystemRuntime {
   // choice survives reboots.
   bool nightLockOptionEnabled;
   // NIGHT LOCK OPTION END
+  uint32_t pirHoldSeconds = 30;
 };
 
 struct UserAccount {

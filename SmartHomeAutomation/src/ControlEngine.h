@@ -39,6 +39,9 @@ class ControlEngine {
   // so it survives a reboot.
   bool setNightLockOptionEnabled(bool enabled, String *error = nullptr);
   // NIGHT LOCK OPTION END
+  // PIR HOLD TIME START
+  bool setPirHoldTime(uint32_t seconds, String *error = nullptr);
+  // PIR HOLD TIME END
   void updateConnectedClients(uint16_t clients);
 
   String buildStateJson() const;

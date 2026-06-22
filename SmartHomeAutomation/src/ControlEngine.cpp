@@ -543,6 +543,42 @@ bool ControlEngine::setNightLockOptionEnabled(bool enabled, String *error)
 }
 // NIGHT LOCK OPTION END
 
+// PIR HOLD TIME START
+bool ControlEngine::setPirHoldTime(uint32_t seconds, String *error)
+{
+  if (seconds < PIR_HOLD_MIN || seconds > PIR_HOLD_MAX)
+  {
+    if (error)
+    {
+      *error = "PIR hold time must be between " + String(PIR_HOLD_MIN) + " and " + String(PIR_HOLD_MAX) + " seconds.";
+    }
+    return false;
+  }
+
+  bool updated = false;
+  withLock([&]()
+           {
+    if (runtime_->pirHoldSeconds == seconds) {
+      updated = true;
+      return;
+    }
+    runtime_->pirHoldSeconds = seconds;
+    storage_->persistPirHoldTime(seconds);
+
+    publishEventLocked("TIMER",
+                       "pir_hold_time.changed",
+                       String("PIR hold time set to ") + String(seconds) + " seconds.",
+                       -1,
+                       true);
+    updated = true; });
+  if (!updated && error && error->isEmpty())
+  {
+    *error = "Could not update PIR hold time.";
+  }
+  return updated;
+}
+// PIR HOLD TIME END
+
 void ControlEngine::updateConnectedClients(uint16_t clients)
 {
   withLock([&]()
@@ -608,6 +644,9 @@ String ControlEngine::buildStateJson() const
     // "it is currently day so the lock happens to be inactive".
     doc["nightLockOption"] = runtime_->nightLockOptionEnabled;
     // NIGHT LOCK OPTION END
+    // PIR HOLD TIME START
+    doc["pirHoldSeconds"] = runtime_->pirHoldSeconds;
+    // PIR HOLD TIME END
     JsonArray relays = doc["relays"].to<JsonArray>();
     for (size_t i = 0; i < RELAY_COUNT; ++i) {
       JsonObject relay = relays.add<JsonObject>();
@@ -803,7 +842,7 @@ void ControlEngine::processPirInputsLocked(uint64_t nowEpoch)
       {
         continue;
       }
-      relay.autoHoldUntilEpoch = max(relay.autoHoldUntilEpoch, nowEpoch + PIR_HOLD_SECONDS);
+      relay.autoHoldUntilEpoch = max(relay.autoHoldUntilEpoch, nowEpoch + runtime_->pirHoldSeconds);
     }
     if (!previousStableValue)
     {
