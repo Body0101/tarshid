@@ -3,6 +3,9 @@
 #include <Arduino.h>
 #include <functional>
 #include <vector>
+#include <HTTPClient.h>
+#include <WiFi.h>
+#include <ArduinoJson.h>
 
 #include "StorageLayer.h"
 #include "SystemTypes.h"
@@ -19,6 +22,7 @@ class ControlEngine {
   void tickFast();
   void tickHousekeeping();
   void refreshOutputs();
+  bool syncConfigWithBackend();
 
   bool setManualMode(size_t relayIndex, RelayMode mode, String *error);
   bool setTimer(size_t relayIndex, uint32_t durationMinutes, RelayState targetState, String *error);

@@ -2553,8 +2553,12 @@
               </label>
               <label class="field" style="margin-top: 8px;">
                 <span data-i18n="wifi_pass_label">Wi-Fi Password</span>
+                <input id="wifiPassInput" type="password" maxlength="64" placeholder="Password">
+              </label>
+              <label class="field" style="margin-top: 8px;">
+                <span>Backend API URL</span>
                 <div style="display: flex; gap: 8px;">
-                  <input id="wifiPassInput" type="password" maxlength="64" placeholder="Password">
+                  <input type="text" id="backendUrlInput" placeholder="Backend API URL (e.g. http://192.168.1.50:8000)">
                   <button id="saveWifiBtn" class="primary" style="height: unset; padding: 10px 16px; border-radius: 12px;" data-i18n="save_btn">Save</button>
                 </div>
               </label>
@@ -4201,6 +4205,7 @@
     }
     // OVERHEAT GUARD END
     // NETWORK CONFIG START
+    const backendUrlInput = document.getElementById("backendUrlInput");
     if (saveWifiBtn && wifiSsidInput && wifiPassInput) {
       saveWifiBtn.addEventListener("click", async () => {
         const ssid = wifiSsidInput.value.trim();
@@ -4209,12 +4214,13 @@
           showToast(t("wifi_invalid_ssid") || "SSID cannot be empty.");
           return;
         }
+        const backendUrl = backendUrlInput ? backendUrlInput.value.trim() : "";
         try {
           saveWifiBtn.disabled = true;
           const res = await fetch("/api/settings/wifi", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ssid: ssid, password: password })
+            body: JSON.stringify({ ssid: ssid, password: password, backendUrl: backendUrl })
           });
           const data = await res.json();
           showToast(data.msg || (data.ok ? "Saved." : "Error."));

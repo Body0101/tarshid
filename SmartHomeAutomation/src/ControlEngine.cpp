@@ -27,13 +27,14 @@ void ControlEngine::begin(SystemRuntime *runtime, StorageLayer *storage, TimeKee
   stateMutex_ = stateMutex;
 
   // Configure relay outputs and PIR inputs once at boot.
-  for (size_t i = 0; i < RELAY_COUNT; ++i)
-  {
-    pinMode(RELAY_CONFIG[i].relayPin, OUTPUT);
-    // Drive the physical relay pin to the logical OFF state on boot.
-    // This keeps the UI meaning of ON/OFF aligned with the hardware board polarity.
-    digitalWrite(RELAY_CONFIG[i].relayPin, relayOutputLevel(RelayState::OFF));
-  }
+  withLock([&]()
+           {
+    for (size_t i = 0; i < RELAY_COUNT; ++i) {
+      pinMode(runtime_->relays[i].pin, OUTPUT);
+      // Immediately force the actual pin low to guarantee hardware matches software OFF state.
+      // This prevents a window of floating output during the initial fast-tick loop.
+      digitalWrite(runtime_->relays[i].pin, relayOutputLevel(RelayState::OFF));
+    } });
   for (size_t i = 0; i < PIR_COUNT; ++i)
   {
     pinMode(PIR_CONFIG[i].pin, INPUT_PULLDOWN);
@@ -143,18 +144,14 @@ void ControlEngine::tickHousekeeping()
           }
           clearEnergyTrackingLocked(relay);
           
-          if (relay.appliedState == RelayState::ON) {
-            closeActiveOnWindowLocked(relay, nowEpoch);
-          }
-          relay.appliedState = RelayState::OFF;
-          relay.appliedSource = ControlSource::NONE;
-          relay.autoHoldUntilEpoch = 0;
-          
-          digitalWrite(RELAY_CONFIG[i].relayPin, relayOutputLevel(RelayState::OFF));
-          storage_->persistRelayState(i, relay.appliedState, relay.appliedSource);
-          storage_->persistRelayStats(i, relay.stats);
-          
-          publishEventLocked("OFF", "relay.overheat_forced_off", String(RELAY_CONFIG[i].name) + " forced OFF by Overheat Guard.", static_cast<int>(i), true);
+          if (runtime_->relays[i].appliedState == RelayState::ON)
+        {
+          runtime_->relays[i].appliedState = RelayState::OFF;
+          runtime_->relays[i].appliedSource = ControlSource::NONE;
+          digitalWrite(runtime_->relays[i].pin, relayOutputLevel(RelayState::OFF));
+          closeActiveOnWindowLocked(runtime_->relays[i], nowEpoch);
+
+          publishEventLocked("OFF", "relay.overheat_forced_off", String(runtime_->relays[i].name) + " forced OFF by Overheat Guard.", static_cast<int>(i), true);
         }
       }
     }
@@ -187,8 +184,63 @@ void ControlEngine::refreshOutputs()
   withLock([&]()
            {
     for (size_t i = 0; i < RELAY_COUNT; ++i) {
-      digitalWrite(RELAY_CONFIG[i].relayPin, relayOutputLevel(runtime_->relays[i].appliedState));
+      digitalWrite(runtime_->relays[i].pin, relayOutputLevel(runtime_->relays[i].appliedState));
     } });
+}
+
+bool ControlEngine::syncConfigWithBackend() {
+  if (WiFi.status() != WL_CONNECTED || strlen(runtime_->backendUrl) == 0) {
+    return false;
+  }
+  
+  String mac = WiFi.macAddress();
+  mac.toUpperCase();
+  String url = String(runtime_->backendUrl) + "/api/device/" + mac + "/config/";
+  
+  HTTPClient http;
+  http.setTimeout(10000);
+  if (!http.begin(url)) {
+    return false;
+  }
+  
+  int httpCode = http.GET();
+  if (httpCode != 200) {
+    http.end();
+    return false;
+  }
+  
+  String payload = http.getString();
+  http.end();
+  
+  DynamicJsonDocument doc(4096);
+  DeserializationError err = deserializeJson(doc, payload);
+  if (err) {
+    return false;
+  }
+  
+  JsonArray relays = doc["relays"].as<JsonArray>();
+  if (relays.isNull()) {
+    return false;
+  }
+  
+  withLock([&]() {
+    size_t i = 0;
+    for (JsonObject relay : relays) {
+      if (i >= RELAY_COUNT) break;
+      
+      const char* name = relay["name"] | RELAY_CONFIG[i].name;
+      uint8_t pin = relay["pin"] | RELAY_CONFIG[i].relayPin;
+      
+      strncpy(runtime_->relays[i].name, name, sizeof(runtime_->relays[i].name) - 1);
+      runtime_->relays[i].name[sizeof(runtime_->relays[i].name) - 1] = '\0';
+      runtime_->relays[i].pin = pin;
+      
+      pinMode(runtime_->relays[i].pin, OUTPUT);
+      i++;
+    }
+  });
+  
+  return true;
 }
 
 bool ControlEngine::setManualMode(size_t relayIndex, RelayMode mode, String *error)
@@ -716,13 +768,13 @@ String ControlEngine::buildStateJson() const
     // PIR HOLD TIME START
     doc["pirHoldSeconds"] = runtime_->pirHoldSeconds;
     // PIR HOLD TIME END
-    JsonArray relays = doc["relays"].to<JsonArray>();
+    JsonArray relaysArray = doc["relays"].to<JsonArray>();
     for (size_t i = 0; i < RELAY_COUNT; ++i) {
-      JsonObject relay = relays.add<JsonObject>();
       const RelayRuntime &r = runtime_->relays[i];
       const uint64_t onSeconds = effectiveOnSecondsLocked(r, nowEpoch);
-      relay["index"] = i;
-      relay["name"] = RELAY_CONFIG[i].name;
+      JsonObject relay = relaysArray.add<JsonObject>();
+      relay["name"] = runtime_->relays[i].name;
+      relay["mode"] = static_cast<int>(r.manualMode);
       relay["state"] = relayStateToText(r.appliedState);
       relay["source"] = sourceToText(r.appliedSource);
       relay["manualMode"] = relayModeToText(r.manualMode);
@@ -1048,11 +1100,13 @@ void ControlEngine::applyDecisionsLocked(const Decision *decisions, uint64_t now
     RelayRuntime &relay = runtime_->relays[i];
     const RelayState oldState = relay.appliedState;
     const ControlSource oldSource = relay.appliedSource;
+    const bool stateChanged = oldState != decisions[i].state;
+    const bool sourceChanged = oldSource != decisions[i].source;
 
     relay.appliedState = decisions[i].state;
     relay.appliedSource = decisions[i].source;
 
-    if (oldState == relay.appliedState && oldSource == relay.appliedSource)
+    if (!stateChanged && !sourceChanged)
     {
       if (relay.appliedState == RelayState::ON && relay.stats.lastOnEpoch == 0)
       {
@@ -1071,20 +1125,21 @@ void ControlEngine::applyDecisionsLocked(const Decision *decisions, uint64_t now
       relay.stats.lastOnEpoch = nowEpoch;
     }
 
-    digitalWrite(RELAY_CONFIG[i].relayPin, relayOutputLevel(relay.appliedState));
+    digitalWrite(runtime_->relays[i].pin, relayOutputLevel(relay.appliedState));
     storage_->persistRelayState(i, relay.appliedState, relay.appliedSource);
     storage_->persistRelayStats(i, relay.stats);
 
     markEnergyTrackingStartLocked(i, relay, nowEpoch);
 
     const uint64_t eventTs = (relay.appliedSource == ControlSource::TIMER) ? timeKeeper_->nowUserEpoch() : 0;
-    publishEventLocked(relay.appliedState == RelayState::ON ? "ON" : "OFF",
-                       "relay.changed",
-                       String(RELAY_CONFIG[i].name) + " -> " + relayStateToText(relay.appliedState) +
-                           " via " + sourceToText(relay.appliedSource) + ".",
-                       static_cast<int>(i),
-                       true,
-                       eventTs);
+    if (stateChanged || sourceChanged)
+    {
+      const String logType = relay.appliedState == RelayState::ON ? "ON" : "OFF";
+      const String eventName = relay.appliedState == RelayState::ON ? "relay.on" : "relay.off";
+      const String msg = String(runtime_->relays[i].name) + " -> " + relayStateToText(relay.appliedState) +
+                         " (" + sourceToText(relay.appliedSource) + ")";
+      publishEventLocked(logType, eventName, msg, static_cast<int>(i), true, eventTs);
+    }
   }
 }
 
@@ -1153,15 +1208,15 @@ void ControlEngine::applyNightLockTransitionLocked(bool activate, uint64_t nowEp
     {
       closeActiveOnWindowLocked(relay, nowEpoch);
     }
-    relay.appliedState = RelayState::OFF;
-    relay.appliedSource = ControlSource::NONE;
-    digitalWrite(RELAY_CONFIG[i].relayPin, relayOutputLevel(RelayState::OFF));
-    storage_->persistRelayState(i, relay.appliedState, relay.appliedSource);
-    storage_->persistRelayStats(i, relay.stats);
+    runtime_->relays[i].appliedState = RelayState::OFF;
+    runtime_->relays[i].appliedSource = ControlSource::NONE;
+    digitalWrite(runtime_->relays[i].pin, relayOutputLevel(RelayState::OFF));
+    closeActiveOnWindowLocked(runtime_->relays[i], nowEpoch);
+    storage_->persistRelayState(i, runtime_->relays[i].appliedState, runtime_->relays[i].appliedSource);
 
     publishEventLocked("OFF",
-                       "relay.night_forced_off",
-                       String(RELAY_CONFIG[i].name) + " forced OFF by Night Lock.",
+                       "relay.night_lock",
+                       String(runtime_->relays[i].name) + " forced OFF by Night Lock.",
                        static_cast<int>(i),
                        true);
   }
@@ -1219,9 +1274,9 @@ void ControlEngine::finalizeEnergyTrackingLocked(size_t relayIndex,
   storage_->persistRelayEnergyStats(relayIndex, relay.stats.totalEnergyWh, relay.stats.lastEnergyWh);
 
   publishEnergyUpdateLocked(relayIndex, relay.stats.lastEnergyWh, relay.stats.totalEnergyWh);
-  publishEventLocked("TIMER",
-                     "energy.calculated",
-                     String(RELAY_CONFIG[relayIndex].name) + " energy computed after " + stopEvent + ".",
+  publishEventLocked("ENERGY",
+                     "relay.energy_updated",
+                     String(runtime_->relays[relayIndex].name) + " energy computed after " + stopEvent + ".",
                      static_cast<int>(relayIndex),
                      true);
   clearEnergyTrackingLocked(relay);
@@ -1242,7 +1297,7 @@ void ControlEngine::publishEnergyUpdateLocked(size_t relayIndex, float lastWh, f
   JsonDocument doc;
   doc["type"] = "TIMER";
   doc["event"] = "energy_update";
-  doc["msg"] = String("Energy updated for ") + RELAY_CONFIG[relayIndex].name + ".";
+  doc["msg"] = String("Energy updated for ") + runtime_->relays[relayIndex].name + ".";
   const uint64_t energyTs = timeKeeper_->nowUserEpoch() > 0 ? timeKeeper_->nowUserEpoch() : nowEpochLocked();
   doc["ts"] = energyTs;
   doc["relay"] = relayIndex;

@@ -453,6 +453,7 @@ void setup() {
   initWatchdog();
 
   gControl.begin(&gRuntime, &gStorage, &gTimeKeeper, gStateMutex);
+  gControl.syncConfigWithBackend();
   gWebPortal.begin(&gControl, &gStorage, &gTimeKeeper);
   gControl.setEventCallback([](const String &json, bool bufferIfOffline) {
     gWebPortal.enqueueEvent(json, bufferIfOffline);

@@ -484,7 +484,7 @@ void WebPortal::setupRoutes()
     }
 
     JsonDocument doc;
-    if (deserializeJson(doc, body) || !hasOnlyAllowedKeys(doc, {"ssid", "password"})) {
+    if (deserializeJson(doc, body) || !hasOnlyAllowedKeys(doc, {"ssid", "password", "backendUrl"})) {
       response["msg"] = "Invalid JSON structure.";
       String payload;
       serializeJson(response, payload);
@@ -516,6 +516,15 @@ void WebPortal::setupRoutes()
     engine_->getRuntime()->wifiSsid[32] = '\0';
     strncpy(engine_->getRuntime()->wifiPassword, password.c_str(), 64);
     engine_->getRuntime()->wifiPassword[64] = '\0';
+
+    if (doc.containsKey("backendUrl") && doc["backendUrl"].is<String>()) {
+      String url = doc["backendUrl"].as<String>();
+      if (url.length() < 128) {
+        storage_->persistBackendUrl(url);
+        strncpy(engine_->getRuntime()->backendUrl, url.c_str(), 127);
+        engine_->getRuntime()->backendUrl[127] = '\0';
+      }
+    }
 
     WiFi.disconnect(false, true);
     delay(100);

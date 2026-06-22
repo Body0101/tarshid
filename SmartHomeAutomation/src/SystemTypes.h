@@ -84,6 +84,8 @@ struct RelayStats {
 };
 
 struct RelayRuntime {
+  char name[64];
+  uint8_t pin;
   RelayMode manualMode;
   RelayState appliedState;
   ControlSource appliedSource;
@@ -136,6 +138,7 @@ struct SystemRuntime {
   char wifiSsid[33] = "";
   char wifiPassword[65] = "";
   int32_t timezoneOffsetMinutes = 0;
+  char backendUrl[128] = "";
   // NETWORK CONFIG END
 };
 

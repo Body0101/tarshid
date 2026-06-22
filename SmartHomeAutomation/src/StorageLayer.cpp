@@ -119,6 +119,9 @@ void StorageLayer::loadRuntime(SystemRuntime *runtime)
   strncpy(runtime->wifiPassword, storedPass.c_str(), sizeof(runtime->wifiPassword) - 1);
   runtime->wifiPassword[sizeof(runtime->wifiPassword) - 1] = '\0';
   runtime->timezoneOffsetMinutes = preferences_.getInt("tz_offset", 0);
+  String storedUrl = preferences_.getString("backendUrl", "");
+  strncpy(runtime->backendUrl, storedUrl.c_str(), sizeof(runtime->backendUrl) - 1);
+  runtime->backendUrl[sizeof(runtime->backendUrl) - 1] = '\0';
   // NETWORK CONFIG END
   runtime->relays.resize(RELAY_COUNT);
   runtime->pirs.resize(PIR_COUNT);
@@ -143,6 +146,9 @@ void StorageLayer::loadRuntime(SystemRuntime *runtime)
   // PIR MAPPING END
   for (size_t i = 0; i < RELAY_COUNT; ++i)
   {
+    strncpy(runtime->relays[i].name, RELAY_CONFIG[i].name, sizeof(runtime->relays[i].name) - 1);
+    runtime->relays[i].name[sizeof(runtime->relays[i].name) - 1] = '\0';
+    runtime->relays[i].pin = RELAY_CONFIG[i].relayPin;
     // RATED DYNAMIC START
     // Load one-time rated power from NVS when present; otherwise keep compile-time defaults unlocked.
     const float storedRatedPower = preferences_.getFloat(keyFor("rp", i).c_str(), RELAY_CONFIG[i].ratedPowerWatts);
@@ -586,6 +592,13 @@ void StorageLayer::persistWifiConfig(const String& ssid, const String& password)
 void StorageLayer::persistTimezoneOffset(int32_t offsetMins) {
   if (lock()) {
     preferences_.putInt("tz_offset", offsetMins);
+    unlock();
+  }
+}
+
+void StorageLayer::persistBackendUrl(const String& url) {
+  if (lock()) {
+    preferences_.putString("backendUrl", url);
     unlock();
   }
 }
