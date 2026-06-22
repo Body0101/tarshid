@@ -2544,6 +2544,23 @@
             </label>
             <!-- PIR HOLD TIME END -->
 
+            <!-- NETWORK CONFIG START -->
+            <div id="networkConfigSection" style="display: none;">
+              <h3 data-i18n="network_config_title" style="margin-top: 16px; margin-bottom: 8px;">Network Configuration</h3>
+              <label class="field">
+                <span data-i18n="wifi_ssid_label">Wi-Fi SSID</span>
+                <input id="wifiSsidInput" type="text" maxlength="32" placeholder="Network Name">
+              </label>
+              <label class="field" style="margin-top: 8px;">
+                <span data-i18n="wifi_pass_label">Wi-Fi Password</span>
+                <div style="display: flex; gap: 8px;">
+                  <input id="wifiPassInput" type="password" maxlength="64" placeholder="Password">
+                  <button id="saveWifiBtn" class="primary" style="height: unset; padding: 10px 16px; border-radius: 12px;" data-i18n="save_btn">Save</button>
+                </div>
+              </label>
+            </div>
+            <!-- NETWORK CONFIG END -->
+
             <!-- OVERHEAT GUARD START -->
             <label class="field" id="overheatRow">
               <span data-i18n="overheat_threshold_label">Overheat Threshold (°C)</span>
@@ -2730,6 +2747,7 @@
     // PIR HOLD TIME START
     const pirHoldInput = document.getElementById("pirHoldInput");
     const savePirHoldBtn = document.getElementById("savePirHoldBtn");
+    const pirHoldRow = document.getElementById("pirHoldRow");
     // PIR HOLD TIME END
     // OVERHEAT GUARD START
     const overheatWarningBanner = document.getElementById("overheatWarningBanner");
@@ -2737,7 +2755,15 @@
     const overheatThresholdInput = document.getElementById("overheatThresholdInput");
     const overheatCooldownInput = document.getElementById("overheatCooldownInput");
     const saveOverheatGuardBtn = document.getElementById("saveOverheatGuardBtn");
+    const overheatRow = document.getElementById("overheatRow");
+    const overheatCooldownRow = document.getElementById("overheatCooldownRow");
     // OVERHEAT GUARD END
+    // NETWORK CONFIG START
+    const networkConfigSection = document.getElementById("networkConfigSection");
+    const saveWifiBtn = document.getElementById("saveWifiBtn");
+    const wifiSsidInput = document.getElementById("wifiSsidInput");
+    const wifiPassInput = document.getElementById("wifiPassInput");
+    // NETWORK CONFIG END
     const refreshBtn = document.getElementById("refreshBtn");
     const syncTimeBtn = document.getElementById("syncTimeBtn");
     const powerDisabledText = document.getElementById("powerDisabledText");
@@ -2780,6 +2806,19 @@
       // Belt-and-braces: if no permissions at all, also force the modal closed
       // so a stale [hidden=false] from a previous session cannot leak content.
       if (!anyPerm && adminModal) adminModal.hidden = true;
+      
+      // Settings panel visibility
+      if (!isAdmin) {
+        pirHoldRow.style.display = "none";
+        overheatRow.style.display = "none";
+        overheatCooldownRow.style.display = "none";
+        if (networkConfigSection) networkConfigSection.style.display = "none";
+      } else {
+        pirHoldRow.style.display = "block";
+        overheatRow.style.display = "block";
+        overheatCooldownRow.style.display = "block";
+        if (networkConfigSection) networkConfigSection.style.display = "block";
+      }
     }
     // ACCESS CONTROL END
 
@@ -4161,6 +4200,33 @@
       });
     }
     // OVERHEAT GUARD END
+    // NETWORK CONFIG START
+    if (saveWifiBtn && wifiSsidInput && wifiPassInput) {
+      saveWifiBtn.addEventListener("click", async () => {
+        const ssid = wifiSsidInput.value.trim();
+        const password = wifiPassInput.value;
+        if (!ssid) {
+          showToast(t("wifi_invalid_ssid") || "SSID cannot be empty.");
+          return;
+        }
+        try {
+          saveWifiBtn.disabled = true;
+          const res = await fetch("/api/settings/wifi", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ssid: ssid, password: password })
+          });
+          const data = await res.json();
+          showToast(data.msg || (data.ok ? "Saved." : "Error."));
+          if (data.ok) wifiPassInput.value = "";
+        } catch (err) {
+          showToast("Network error.");
+        } finally {
+          saveWifiBtn.disabled = false;
+        }
+      });
+    }
+    // NETWORK CONFIG END
     // NIGHT LOCK OPTION END
     pirMappingList.addEventListener("change", (event) => {
       const target = event.target instanceof Element ? event.target : null;

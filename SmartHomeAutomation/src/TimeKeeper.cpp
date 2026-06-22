@@ -71,14 +71,26 @@ void TimeKeeper::begin(Preferences *prefs) {
   }
 }
 
+void TimeKeeper::beginNTP() {
+  configTime(0, 0, NTP_SERVER_1, NTP_SERVER_2);
+}
+
 bool TimeKeeper::syncFromClient(uint64_t epochSeconds) {
-  if (epochSeconds < 1700000000ULL) {
-    return false;
+  if (WiFi.status() == WL_CONNECTED) {
+    // Online: NTP is working in the background. DO NOT override the local RTC epoch.
+    // ONLY accept the browserOffset, update timezoneOffsetMinutes, and persist it.
+    // (Note: timezone offset saving is done by WebPortal::applyTimeSyncFromJson before this is called)
+    return true; 
+  } else {
+    // Offline: The RTC might have drifted. Accept the FULL epoch and offset from the browser.
+    if (epochSeconds < 1700000000ULL) {
+      return false;
+    }
+    setEpoch(epochSeconds);
+    persistEpoch(epochSeconds);
+    persistUserEpoch(epochSeconds);
+    return true;
   }
-  setEpoch(epochSeconds);
-  persistEpoch(epochSeconds);
-  persistUserEpoch(epochSeconds);
-  return true;
 }
 
 bool TimeKeeper::syncFromHms(int hour, int minute, int second) {
@@ -186,6 +198,8 @@ uint64_t TimeKeeper::nowEpoch() const {
   return static_cast<uint64_t>(raw);
 }
 
+extern SystemRuntime gRuntime;
+
 uint64_t TimeKeeper::nowUserEpoch() const {
   if (!userTimeValid_) {
     return 0;
@@ -194,7 +208,7 @@ uint64_t TimeKeeper::nowUserEpoch() const {
   if (epoch < 1700000000ULL) {
     return 0;
   }
-  return epoch;
+  return epoch + (gRuntime.timezoneOffsetMinutes * 60);
 }
 
 bool TimeKeeper::hasValidTime() const { return timeValid_; }

@@ -7,6 +7,7 @@
 class TimeKeeper {
  public:
   void begin(Preferences *prefs);
+  void beginNTP();
   bool syncFromClient(uint64_t epochSeconds);
   bool syncFromHms(int hour, int minute, int second);
   bool syncFromDateTime(int year, int month, int day, int hour, int minute, int second);

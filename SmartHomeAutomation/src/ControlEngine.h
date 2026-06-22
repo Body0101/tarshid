@@ -12,6 +12,7 @@ class ControlEngine {
  public:
   using EventCallback = std::function<void(const String &eventJson, bool bufferIfOffline)>;
 
+  SystemRuntime* getRuntime() const { return runtime_; }
   void begin(SystemRuntime *runtime, StorageLayer *storage, TimeKeeper *timeKeeper, SemaphoreHandle_t stateMutex);
   void setEventCallback(EventCallback callback);
 
@@ -74,6 +75,8 @@ class ControlEngine {
   Decision evaluateRelayLocked(size_t relayIndex, uint64_t nowEpoch);
   void applyDecisionsLocked(const Decision *decisions, uint64_t nowEpoch);
   uint64_t effectiveOnSecondsLocked(const RelayRuntime &relay, uint64_t nowEpoch) const;
+  void queueTimerSyncEvent(int channel, uint64_t newStart, uint64_t newEnd);
+  
   void closeActiveOnWindowLocked(RelayRuntime &relay, uint64_t nowEpoch);
   bool withLock(const std::function<void()> &fn) const;
 

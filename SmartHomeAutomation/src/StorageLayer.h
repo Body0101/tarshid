@@ -79,6 +79,11 @@ void setLogsEnabled(bool enabled);
   void persistLastCleanupDay(uint32_t dayToken);
   uint32_t loadLastCleanupDay();
 
+  // NETWORK CONFIG START
+  void persistWifiConfig(const String& ssid, const String& password);
+  void persistTimezoneOffset(int32_t offsetMins);
+  // NETWORK CONFIG END
+
   void appendEvent(uint64_t epoch, const String &type, const String &message, int channel = -1);
   void appendEventJson(const String &jsonLine);
   void appendPending(const String &jsonLine);

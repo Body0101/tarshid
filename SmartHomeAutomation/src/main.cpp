@@ -200,9 +200,9 @@ void setupWiFi() {
     Serial.println("[WiFi] Failed to start AP mode.");
   }
 
-  if (strlen(STA_SSID) > 0) {
-    WiFi.begin(STA_SSID, STA_PASSWORD);
-    Serial.printf("[WiFi] Connecting STA to %s\n", STA_SSID);
+  if (strlen(gRuntime.wifiSsid) > 0) {
+    WiFi.begin(gRuntime.wifiSsid, gRuntime.wifiPassword);
+    Serial.printf("[WiFi] Connecting STA to %s\n", gRuntime.wifiSsid);
   } else {
     Serial.println("[WiFi] STA credentials empty; running AP-only until configured.");
   }
@@ -226,14 +226,14 @@ void maintainWiFi() {
     }
   }
 
-  if (strlen(STA_SSID) > 0 && WiFi.status() != WL_CONNECTED && (nowMs - lastStaReconnectMs) >= 10000UL) {
+  if (strlen(gRuntime.wifiSsid) > 0 && WiFi.status() != WL_CONNECTED && (nowMs - lastStaReconnectMs) >= 10000UL) {
     lastStaReconnectMs = nowMs;
     // Retry STA reconnection without blocking the network task. A soft reconnect
     // is attempted first, then a full begin() refresh if the station is still down.
     WiFi.reconnect();
     if (WiFi.status() != WL_CONNECTED) {
       WiFi.disconnect(false, false);
-      WiFi.begin(STA_SSID, STA_PASSWORD);
+      WiFi.begin(gRuntime.wifiSsid, gRuntime.wifiPassword);
     }
   }
 }
@@ -286,8 +286,8 @@ void processWiFiApRecovery() {
     WiFi.setSleep(false);
     WiFi.setAutoReconnect(true);
     startSecureSoftAp();
-    if (strlen(STA_SSID) > 0) {
-      WiFi.begin(STA_SSID, STA_PASSWORD);
+    if (strlen(gRuntime.wifiSsid) > 0) {
+      WiFi.begin(gRuntime.wifiSsid, gRuntime.wifiPassword);
     }
 
     gWiFiApRecoveryState = WiFiApRecoveryState::WAITING_FOR_AP_READY;
@@ -443,6 +443,7 @@ void setup() {
   gTimeKeeper.begin(gStorage.prefs());
 
   setupWiFi();
+  gTimeKeeper.beginNTP();
   // Give SoftAP a short time to obtain its IP before starting captive DNS/server.
   const uint32_t apWaitStart = millis();
   while (WiFi.softAPIP() == IPAddress(0, 0, 0, 0) && (millis() - apWaitStart) < 2000UL) {

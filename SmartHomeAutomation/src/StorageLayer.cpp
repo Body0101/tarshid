@@ -111,6 +111,15 @@ void StorageLayer::loadRuntime(SystemRuntime *runtime)
   runtime->overheatThreshold = preferences_.getFloat("oh_thresh", 85.0f);
   runtime->overheatCooldownSeconds = preferences_.getUInt("oh_cooldown", 300);
   // OVERHEAT GUARD END
+  // NETWORK CONFIG START
+  String storedSsid = preferences_.getString("wifi_ssid", "");
+  String storedPass = preferences_.getString("wifi_pass", "");
+  strncpy(runtime->wifiSsid, storedSsid.c_str(), sizeof(runtime->wifiSsid) - 1);
+  runtime->wifiSsid[sizeof(runtime->wifiSsid) - 1] = '\0';
+  strncpy(runtime->wifiPassword, storedPass.c_str(), sizeof(runtime->wifiPassword) - 1);
+  runtime->wifiPassword[sizeof(runtime->wifiPassword) - 1] = '\0';
+  runtime->timezoneOffsetMinutes = preferences_.getInt("tz_offset", 0);
+  // NETWORK CONFIG END
   runtime->relays.resize(RELAY_COUNT);
   runtime->pirs.resize(PIR_COUNT);
   runtime->pirMap.resize(PIR_COUNT);
@@ -565,6 +574,22 @@ void StorageLayer::persistLastCleanupDay(uint32_t dayToken)
   unlock();
 }
 
+// NETWORK CONFIG START
+void StorageLayer::persistWifiConfig(const String& ssid, const String& password) {
+  if (lock()) {
+    preferences_.putString("wifi_ssid", ssid);
+    preferences_.putString("wifi_pass", password);
+    unlock();
+  }
+}
+
+void StorageLayer::persistTimezoneOffset(int32_t offsetMins) {
+  if (lock()) {
+    preferences_.putInt("tz_offset", offsetMins);
+    unlock();
+  }
+}
+// NETWORK CONFIG END
 uint32_t StorageLayer::loadLastCleanupDay()
 {
   if (!lock())

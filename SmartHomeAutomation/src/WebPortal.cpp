@@ -456,6 +456,81 @@ uint16_t WebPortal::connectedClientCount() const { return connectedClients_; }
 void WebPortal::setupRoutes()
 {
   // ============================================================
+  // SETTINGS ENDPOINTS
+  // ============================================================
+  // NETWORK CONFIG START
+  server_.on("/api/settings/wifi", HTTP_POST, [this]()
+  {
+    JsonDocument response;
+    response["ok"] = false;
+
+    String mac = macFromHttpClient();
+    UserAccount *requester = storage_->findUserByMac(mac.c_str());
+    if (!requester || !checkPermission(*requester, "admin")) {
+      response["msg"] = "Admin privileges required.";
+      String payload;
+      serializeJson(response, payload);
+      server_.send(403, "application/json", payload);
+      return;
+    }
+
+    const String body = server_.arg("plain");
+    if (body.isEmpty() || body.length() > MAX_HTTP_BODY_BYTES || containsBlockedInputTokens(body)) {
+      response["msg"] = "Invalid JSON body.";
+      String payload;
+      serializeJson(response, payload);
+      server_.send(400, "application/json", payload);
+      return;
+    }
+
+    JsonDocument doc;
+    if (deserializeJson(doc, body) || !hasOnlyAllowedKeys(doc, {"ssid", "password"})) {
+      response["msg"] = "Invalid JSON structure.";
+      String payload;
+      serializeJson(response, payload);
+      server_.send(400, "application/json", payload);
+      return;
+    }
+
+    if (doc["ssid"].isNull() || !doc["ssid"].is<String>() || doc["password"].isNull() || !doc["password"].is<String>()) {
+      response["msg"] = "Missing ssid or password.";
+      String payload;
+      serializeJson(response, payload);
+      server_.send(400, "application/json", payload);
+      return;
+    }
+
+    String ssid = doc["ssid"].as<String>();
+    String password = doc["password"].as<String>();
+
+    if (ssid.length() > 32 || password.length() > 64) {
+      response["msg"] = "SSID (max 32) or password (max 64) too long.";
+      String payload;
+      serializeJson(response, payload);
+      server_.send(400, "application/json", payload);
+      return;
+    }
+
+    storage_->persistWifiConfig(ssid, password);
+    strncpy(engine_->getRuntime()->wifiSsid, ssid.c_str(), 32);
+    engine_->getRuntime()->wifiSsid[32] = '\0';
+    strncpy(engine_->getRuntime()->wifiPassword, password.c_str(), 64);
+    engine_->getRuntime()->wifiPassword[64] = '\0';
+
+    WiFi.disconnect(false, true);
+    delay(100);
+    WiFi.begin(ssid.c_str(), password.c_str());
+
+    response["ok"] = true;
+    response["msg"] = "Credentials saved. Connecting...";
+    String payload;
+    serializeJson(response, payload);
+    server_.send(200, "application/json", payload);
+  });
+  // NETWORK CONFIG END
+
+  // OVERHEAT GUARD START
+  // ============================================================
   // ACCESS CONTROL ENDPOINTS
   // ============================================================
   server_.on("/api/auth/status", HTTP_GET, [this]()
@@ -1825,6 +1900,9 @@ bool WebPortal::applyTimeSyncFromJson(const JsonDocument &doc, bool requireClock
     {
       return false;
     }
+    // NETWORK CONFIG START
+    storage_->persistTimezoneOffset(doc["tzOffsetMinutes"].as<int32_t>());
+    // NETWORK CONFIG END
   }
 
   if (doc["epoch"].is<uint64_t>())

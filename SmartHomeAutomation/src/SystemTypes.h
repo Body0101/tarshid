@@ -131,6 +131,12 @@ struct SystemRuntime {
   bool isOverheatSuspended = false;
   uint64_t overheatResumeEpoch = 0;
   // OVERHEAT GUARD END
+  
+  // NETWORK CONFIG START
+  char wifiSsid[33] = "";
+  char wifiPassword[65] = "";
+  int32_t timezoneOffsetMinutes = 0;
+  // NETWORK CONFIG END
 };
 
 struct UserAccount {
