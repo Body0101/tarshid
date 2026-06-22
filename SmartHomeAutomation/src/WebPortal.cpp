@@ -1075,6 +1075,70 @@ Serial.printf("[AddUser] Requester OK: %s\n", requester->macAddress);
   });
   // PIR HOLD TIME END
 
+  // OVERHEAT GUARD START
+  server_.on("/api/settings/overheatGuard", HTTP_POST, [this]()
+             {
+    JsonDocument response;
+    response["ok"] = false;
+    const String body = server_.arg("plain");
+    if (body.isEmpty() || body.length() > MAX_HTTP_BODY_BYTES || containsBlockedInputTokens(body)) {
+      response["msg"] = "Invalid JSON body.";
+      String payload;
+      serializeJson(response, payload);
+      server_.send(400, "application/json", payload);
+      return;
+    }
+
+    JsonDocument doc;
+    if (deserializeJson(doc, body) || !hasOnlyAllowedKeys(doc, {"threshold", "cooldownSeconds"})) {
+      response["msg"] = "Invalid JSON body.";
+      String payload;
+      serializeJson(response, payload);
+      server_.send(400, "application/json", payload);
+      return;
+    }
+
+    if (doc["threshold"].isNull() || !doc["threshold"].is<float>() ||
+        doc["cooldownSeconds"].isNull() || !doc["cooldownSeconds"].is<uint32_t>()) {
+      response["msg"] = "Missing or invalid configuration values.";
+      String payload;
+      serializeJson(response, payload);
+      server_.send(400, "application/json", payload);
+      return;
+    }
+
+    const float threshold = doc["threshold"].as<float>();
+    const uint32_t cooldownSeconds = doc["cooldownSeconds"].as<uint32_t>();
+    
+    if (threshold < 50.0f || threshold > 110.0f) {
+      response["msg"] = "Threshold must be between 50 and 110 C.";
+      String payload;
+      serializeJson(response, payload);
+      server_.send(400, "application/json", payload);
+      return;
+    }
+    if (cooldownSeconds < 60 || cooldownSeconds > 3600) {
+      response["msg"] = "Cooldown must be between 60 and 3600 seconds.";
+      String payload;
+      serializeJson(response, payload);
+      server_.send(400, "application/json", payload);
+      return;
+    }
+
+    String errorText;
+    const bool ok = engine_->setOverheatGuard(threshold, cooldownSeconds, &errorText);
+
+    response["ok"] = ok;
+    response["msg"] = ok ? "Overheat guard settings saved." : errorText;
+    String payload;
+    serializeJson(response, payload);
+    server_.send(ok ? 200 : 400, "application/json", payload);
+    if (ok) {
+      scheduleStateBroadcast();
+    }
+  });
+  // OVERHEAT GUARD END
+
   auto setTimeHandler = [this]()
   {
     const String body = server_.arg("plain");

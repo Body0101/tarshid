@@ -27,11 +27,15 @@ class StorageLayer {
   // Save small configuration values in NVS/Preferences. These survive reboot.
   bool saveBoolSetting(const char *key, bool value);
   bool saveIntSetting(const char *key, int32_t value);
+  bool saveFloatSetting(const char *key, float value);
+  bool saveUIntSetting(const char *key, uint32_t value);
   bool saveStringSetting(const char *key, const String &value);
 
   // Read key-value settings back from NVS at boot/runtime.
   bool readBoolSetting(const char *key, bool defaultValue, bool *outValue);
   bool readIntSetting(const char *key, int32_t defaultValue, int32_t *outValue);
+  bool readFloatSetting(const char *key, float defaultValue, float *outValue);
+  bool readUIntSetting(const char *key, uint32_t defaultValue, uint32_t *outValue);
   bool readStringSetting(const char *key, const String &defaultValue, String *outValue);
 
   // Save/load structured data as JSON files in LittleFS.

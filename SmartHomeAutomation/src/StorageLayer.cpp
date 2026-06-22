@@ -107,6 +107,10 @@ void StorageLayer::loadRuntime(SystemRuntime *runtime)
   // PIR HOLD TIME START
   runtime->pirHoldSeconds = preferences_.getUInt(PIR_HOLD_KEY, PIR_HOLD_DEFAULT);
   // PIR HOLD TIME END
+  // OVERHEAT GUARD START
+  runtime->overheatThreshold = preferences_.getFloat("oh_thresh", 85.0f);
+  runtime->overheatCooldownSeconds = preferences_.getUInt("oh_cooldown", 300);
+  // OVERHEAT GUARD END
   runtime->relays.resize(RELAY_COUNT);
   runtime->pirs.resize(PIR_COUNT);
   runtime->pirMap.resize(PIR_COUNT);
@@ -332,6 +336,28 @@ bool StorageLayer::saveIntSetting(const char *key, int32_t value)
   return written == sizeof(int32_t);
 }
 
+bool StorageLayer::saveFloatSetting(const char *key, float value)
+{
+  if (!key || !lock())
+  {
+    return false;
+  }
+  const size_t written = preferences_.putFloat(key, value);
+  unlock();
+  return written == sizeof(float);
+}
+
+bool StorageLayer::saveUIntSetting(const char *key, uint32_t value)
+{
+  if (!key || !lock())
+  {
+    return false;
+  }
+  const size_t written = preferences_.putUInt(key, value);
+  unlock();
+  return written == sizeof(uint32_t);
+}
+
 bool StorageLayer::saveStringSetting(const char *key, const String &value)
 {
   if (!key || !lock())
@@ -361,6 +387,28 @@ bool StorageLayer::readIntSetting(const char *key, int32_t defaultValue, int32_t
     return false;
   }
   *outValue = preferences_.getInt(key, defaultValue);
+  unlock();
+  return true;
+}
+
+bool StorageLayer::readFloatSetting(const char *key, float defaultValue, float *outValue)
+{
+  if (!key || !outValue || !lock())
+  {
+    return false;
+  }
+  *outValue = preferences_.getFloat(key, defaultValue);
+  unlock();
+  return true;
+}
+
+bool StorageLayer::readUIntSetting(const char *key, uint32_t defaultValue, uint32_t *outValue)
+{
+  if (!key || !outValue || !lock())
+  {
+    return false;
+  }
+  *outValue = preferences_.getUInt(key, defaultValue);
   unlock();
   return true;
 }

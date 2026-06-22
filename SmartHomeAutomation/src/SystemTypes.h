@@ -123,6 +123,14 @@ struct SystemRuntime {
   bool nightLockOptionEnabled;
   // NIGHT LOCK OPTION END
   uint32_t pirHoldSeconds = 30;
+  
+  // OVERHEAT GUARD START
+  float espTemperature = 0.0f;
+  float overheatThreshold = 85.0f;        // Default threshold in Celsius
+  uint32_t overheatCooldownSeconds = 300; // Default cooldown duration (5 minutes)
+  bool isOverheatSuspended = false;
+  uint64_t overheatResumeEpoch = 0;
+  // OVERHEAT GUARD END
 };
 
 struct UserAccount {

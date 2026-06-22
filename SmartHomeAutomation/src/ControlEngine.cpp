@@ -36,7 +36,7 @@ void ControlEngine::begin(SystemRuntime *runtime, StorageLayer *storage, TimeKee
   }
   for (size_t i = 0; i < PIR_COUNT; ++i)
   {
-    pinMode(PIR_CONFIG[i].pin, INPUT);
+    pinMode(PIR_CONFIG[i].pin, INPUT_PULLDOWN);
   }
 
   withLock([&]()
@@ -111,6 +111,54 @@ void ControlEngine::tickHousekeeping()
   withLock([&]()
            {
     const uint64_t nowEpoch = nowEpochLocked();
+    
+    // OVERHEAT GUARD EVALUATION
+    runtime_->espTemperature = temperatureRead();
+    if (runtime_->isOverheatSuspended) {
+      if (nowEpoch >= runtime_->overheatResumeEpoch) {
+        runtime_->isOverheatSuspended = false;
+        runtime_->overheatResumeEpoch = 0;
+        publishEventLocked("INFO", "safety.overheat_resolved", "Overheat resolved. Resuming normal operations.", -1, false);
+      }
+    } else {
+      if (runtime_->espTemperature >= runtime_->overheatThreshold) {
+        runtime_->isOverheatSuspended = true;
+        runtime_->overheatResumeEpoch = nowEpoch + runtime_->overheatCooldownSeconds;
+        publishEventLocked("ERROR", "safety.overheat_triggered", "CRITICAL OVERHEAT DETECTED: Chip temp " + String(runtime_->espTemperature, 1) + " C >= " + String(runtime_->overheatThreshold, 1) + " C. Shutting down system.", -1, false);
+
+        // Immediately force all relays OFF, cancel any active or pending timers, and clear auto-hold timers.
+        const uint64_t timerEpoch = timeKeeper_->nowUserEpoch();
+        for (size_t i = 0; i < RELAY_COUNT; ++i) {
+          RelayRuntime &relay = runtime_->relays[i];
+          if (relay.timer.active || relay.timer.restorePending) {
+            finalizeEnergyTrackingLocked(i, relay, timerEpoch > 0 ? timerEpoch : nowEpoch, "timer.canceled");
+            relay.timer.active = false;
+            relay.timer.startEpoch = 0;
+            relay.timer.endEpoch = 0;
+            relay.timer.targetState = RelayState::OFF;
+            relay.timer.durationMinutes = 0;
+            relay.timer.restorePending = false;
+            storage_->persistTimer(i, relay.timer);
+            publishEventLocked("TIMER", "timer.canceled", "Timer canceled by Overheat Guard", static_cast<int>(i), true, timerEpoch);
+          }
+          clearEnergyTrackingLocked(relay);
+          
+          if (relay.appliedState == RelayState::ON) {
+            closeActiveOnWindowLocked(relay, nowEpoch);
+          }
+          relay.appliedState = RelayState::OFF;
+          relay.appliedSource = ControlSource::NONE;
+          relay.autoHoldUntilEpoch = 0;
+          
+          digitalWrite(RELAY_CONFIG[i].relayPin, relayOutputLevel(RelayState::OFF));
+          storage_->persistRelayState(i, relay.appliedState, relay.appliedSource);
+          storage_->persistRelayStats(i, relay.stats);
+          
+          publishEventLocked("OFF", "relay.overheat_forced_off", String(RELAY_CONFIG[i].name) + " forced OFF by Overheat Guard.", static_cast<int>(i), true);
+        }
+      }
+    }
+
     if (timeKeeper_->hasValidTime()) {
       const uint32_t dayToken = timeKeeper_->currentDayToken();
       if (dayToken != 0 && dayToken != storage_->loadLastCleanupDay()) {
@@ -175,6 +223,13 @@ bool ControlEngine::setManualMode(size_t relayIndex, RelayMode mode, String *err
     if (mode == RelayMode::ON && !canTurnOnLocked()) {
       if (error) *error = "Night mode blocks ON actions.";
       publishEventLocked("ERROR", "manual.blocked", "Manual ON blocked by night mode.", static_cast<int>(relayIndex), true);
+      return;
+    }
+
+    // OVERHEAT GUARD: Block manual ON during overheat suspension.
+    if (mode == RelayMode::ON && runtime_->isOverheatSuspended) {
+      if (error) *error = "Overheat suspension active. Cannot turn ON.";
+      publishEventLocked("ERROR", "manual.blocked_overheat", "Manual ON blocked by Overheat Guard.", static_cast<int>(relayIndex), true);
       return;
     }
 
@@ -257,6 +312,13 @@ bool ControlEngine::setTimer(size_t relayIndex, uint32_t durationMinutes, RelayS
     if (targetState == RelayState::ON && !canTurnOnLocked()) {
       if (error) *error = "Night mode blocks ON timers.";
       publishEventLocked("ERROR", "timer.blocked", "Timer ON request blocked by night mode.", static_cast<int>(relayIndex), true);
+      return;
+    }
+
+    // OVERHEAT GUARD: Block timer ON creation during overheat suspension.
+    if (targetState == RelayState::ON && runtime_->isOverheatSuspended) {
+      if (error) *error = "Overheat suspension active. Cannot start ON timer.";
+      publishEventLocked("ERROR", "timer.blocked_overheat", "Timer ON blocked by Overheat Guard.", static_cast<int>(relayIndex), true);
       return;
     }
 
@@ -644,6 +706,13 @@ String ControlEngine::buildStateJson() const
     // "it is currently day so the lock happens to be inactive".
     doc["nightLockOption"] = runtime_->nightLockOptionEnabled;
     // NIGHT LOCK OPTION END
+    // OVERHEAT GUARD START
+    doc["espTemperature"] = runtime_->espTemperature;
+    doc["overheatThreshold"] = runtime_->overheatThreshold;
+    doc["overheatCooldownSeconds"] = runtime_->overheatCooldownSeconds;
+    doc["isOverheatSuspended"] = runtime_->isOverheatSuspended;
+    doc["overheatResumeEpoch"] = runtime_->overheatResumeEpoch;
+    // OVERHEAT GUARD END
     // PIR HOLD TIME START
     doc["pirHoldSeconds"] = runtime_->pirHoldSeconds;
     // PIR HOLD TIME END
@@ -825,6 +894,11 @@ void ControlEngine::processPirInputsLocked(uint64_t nowEpoch)
       }
       continue;
     }
+    // OVERHEAT GUARD: Block PIR triggers during overheat suspension.
+    if (runtime_->isOverheatSuspended)
+    {
+      continue;
+    }
 
     // PIR MAPPING START
     const uint64_t relayMask = runtime_->pirMap[i].relayMask & relayMaskForCount(RELAY_COUNT);
@@ -949,6 +1023,12 @@ ControlEngine::Decision ControlEngine::evaluateRelayLocked(size_t relayIndex, ui
 
   // Final safety net: Night Lock forcibly blocks every ON decision source.
   if (runtime_->nightLockActive && out.state == RelayState::ON)
+  {
+    out.state = RelayState::OFF;
+    out.source = ControlSource::NONE;
+  }
+  // OVERHEAT GUARD: Absolute priority block.
+  if (runtime_->isOverheatSuspended && out.state == RelayState::ON)
   {
     out.state = RelayState::OFF;
     out.source = ControlSource::NONE;
@@ -1207,3 +1287,19 @@ bool ControlEngine::withLock(const std::function<void()> &fn) const
   xSemaphoreGive(stateMutex_);
   return true;
 }
+
+// OVERHEAT GUARD START
+bool ControlEngine::setOverheatGuard(float threshold, uint32_t cooldownSeconds, String *error)
+{
+  bool accepted = false;
+  withLock([&]()
+           {
+    runtime_->overheatThreshold = threshold;
+    runtime_->overheatCooldownSeconds = cooldownSeconds;
+    storage_->saveFloatSetting("oh_thresh", threshold);
+    storage_->saveUIntSetting("oh_cooldown", cooldownSeconds);
+    accepted = true;
+    publishEventLocked("INFO", "config.overheat_guard", "Overheat guard configured: Threshold " + String(threshold, 1) + "C, Cooldown " + String(cooldownSeconds) + "s", -1, false); });
+  return accepted;
+}
+// OVERHEAT GUARD END

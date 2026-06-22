@@ -2292,6 +2292,13 @@
       </div>
     </header>
 
+    <!-- OVERHEAT WARNING BANNER START -->
+    <div id="overheatWarningBanner" style="display: none; background: var(--warn); color: #fff; padding: 12px 16px; margin: 0 16px 16px 16px; border-radius: 8px; text-align: center; font-weight: bold; align-items: center; justify-content: center; gap: 8px;">
+      ⚠️ <span data-i18n="overheat_warning_banner">OVERHEAT COOLDOWN MODE</span> - 
+      <span data-i18n="overheat_time_remaining">Resumes in</span> <span id="overheatTimeRemaining">--:--</span>
+    </div>
+    <!-- OVERHEAT WARNING BANNER END -->
+
     <!-- ============== 1. CORE SYSTEM STATUS ============== -->
     <section class="status-grid" aria-label="Core system status">
       <div class="status-card">
@@ -2346,6 +2353,18 @@
         </div>
         <span id="clientsStatus" class="pill">Clients: 0</span>
       </div>
+
+      <!-- OVERHEAT GUARD STATUS START -->
+      <div class="status-card">
+        <div class="status-card-head">
+          <div class="status-icon"><svg class="icon">
+              <use href="#i-sun" />
+            </svg></div>
+          <div class="status-label" data-i18n="overheat_temp_label">Chip Temp</div>
+        </div>
+        <span id="overheatTempStatus" class="pill">Temp: -- °C</span>
+      </div>
+      <!-- OVERHEAT GUARD STATUS END -->
     </section>
 
     <!-- ============== 2. QUICK NAVIGATION ============== -->
@@ -2525,6 +2544,22 @@
             </label>
             <!-- PIR HOLD TIME END -->
 
+            <!-- OVERHEAT GUARD START -->
+            <label class="field" id="overheatRow">
+              <span data-i18n="overheat_threshold_label">Overheat Threshold (°C)</span>
+              <div style="display: flex; gap: 8px;">
+                <input id="overheatThresholdInput" type="number" min="10" max="110" step="1" value="85">
+              </div>
+            </label>
+            <label class="field" id="overheatCooldownRow">
+              <span data-i18n="overheat_cooldown_label">Cooldown Duration (Minutes)</span>
+              <div style="display: flex; gap: 8px;">
+                <input id="overheatCooldownInput" type="number" min="1" max="60" step="1" value="5">
+                <button id="saveOverheatGuardBtn" class="primary" style="height: unset; padding: 10px 16px; border-radius: 12px;" data-i18n="save_btn">Save</button>
+              </div>
+            </label>
+            <!-- OVERHEAT GUARD END -->
+
             <div class="actions">
               <button id="syncTimeBtn" class="primary">
                 <svg class="icon" style="width:16px;height:16px;">
@@ -2696,6 +2731,13 @@
     const pirHoldInput = document.getElementById("pirHoldInput");
     const savePirHoldBtn = document.getElementById("savePirHoldBtn");
     // PIR HOLD TIME END
+    // OVERHEAT GUARD START
+    const overheatWarningBanner = document.getElementById("overheatWarningBanner");
+    const overheatTempStatus = document.getElementById("overheatTempStatus");
+    const overheatThresholdInput = document.getElementById("overheatThresholdInput");
+    const overheatCooldownInput = document.getElementById("overheatCooldownInput");
+    const saveOverheatGuardBtn = document.getElementById("saveOverheatGuardBtn");
+    // OVERHEAT GUARD END
     const refreshBtn = document.getElementById("refreshBtn");
     const syncTimeBtn = document.getElementById("syncTimeBtn");
     const powerDisabledText = document.getElementById("powerDisabledText");
@@ -2809,6 +2851,14 @@
         pir_hold_time_invalid: "PIR hold time must be between 10 and 3600 seconds.",
         save_btn: "Save",
         // PIR HOLD TIME END
+        // OVERHEAT GUARD START
+        overheat_threshold_label: "Overheat Threshold (°C)",
+        overheat_cooldown_label: "Cooldown Duration (Minutes)",
+        overheat_invalid: "Invalid threshold (50-110) or cooldown (1-60).",
+        overheat_warning_banner: "OVERHEAT COOLDOWN MODE",
+        overheat_time_remaining: "Resumes in",
+        overheat_temp_label: "Chip Temp",
+        // OVERHEAT GUARD END
         refresh_state: "Refresh State",
         sync_time_now: "Sync Time Now",
         power_consumption_title: "Power Consumption",
@@ -2956,6 +3006,14 @@
         pir_hold_time_invalid: "يجب أن يكون زمن استبقاء مستشعر الحركة بين 10 و 3600 ثانية.",
         save_btn: "حفظ",
         // PIR HOLD TIME END
+        // OVERHEAT GUARD START
+        overheat_threshold_label: "حد درجة الحرارة (°C)",
+        overheat_cooldown_label: "مدة التبريد (بالدقائق)",
+        overheat_invalid: "قيمة الحد غير صالحة (50-110) أو التبريد (1-60).",
+        overheat_warning_banner: "وضع التبريد من الحرارة الزائدة",
+        overheat_time_remaining: "يستأنف العمل خلال",
+        overheat_temp_label: "حرارة المعالج",
+        // OVERHEAT GUARD END
         refresh_state: "تحديث الحالة",
         sync_time_now: "مزامنة الوقت الآن",
         power_consumption_title: "استهلاك الطاقة",
@@ -3782,6 +3840,31 @@
       }
       // PIR HOLD TIME END
       // NIGHT LOCK OPTION END
+      // OVERHEAT GUARD START
+      if (overheatTempStatus && state.espTemperature !== undefined) {
+        overheatTempStatus.textContent = state.espTemperature.toFixed(1) + " °C";
+        overheatTempStatus.className = state.isOverheatSuspended ? "pill warn" : "pill good";
+      }
+      if (overheatWarningBanner) {
+        if (state.isOverheatSuspended) {
+          overheatWarningBanner.style.display = "flex";
+          const offset = typeof serverTimeOffsetSec !== 'undefined' ? serverTimeOffsetSec : 0;
+          const remain = Math.max(0, state.overheatResumeEpoch - (Date.now() / 1000 + offset));
+          const m = Math.floor(remain / 60);
+          const s = Math.floor(remain % 60);
+          const timeRemainingEl = document.getElementById("overheatTimeRemaining");
+          if (timeRemainingEl) {
+             timeRemainingEl.textContent = `${m}:${s.toString().padStart(2, '0')}`;
+          }
+        } else {
+          overheatWarningBanner.style.display = "none";
+        }
+      }
+      if (document.activeElement !== overheatThresholdInput && document.activeElement !== overheatCooldownInput) {
+        if (state.overheatThreshold !== undefined && overheatThresholdInput) overheatThresholdInput.value = state.overheatThreshold;
+        if (state.overheatCooldownSeconds !== undefined && overheatCooldownInput) overheatCooldownInput.value = Math.round(state.overheatCooldownSeconds / 60);
+      }
+      // OVERHEAT GUARD END
       updateNightLockUi();
     }
 
@@ -4054,6 +4137,30 @@
       });
     }
     // PIR HOLD TIME END
+    // OVERHEAT GUARD START
+    if (saveOverheatGuardBtn && overheatThresholdInput && overheatCooldownInput) {
+      saveOverheatGuardBtn.addEventListener("click", async () => {
+        const threshold = parseFloat(overheatThresholdInput.value);
+        const cooldownMinutes = parseInt(overheatCooldownInput.value, 10);
+        if (isNaN(threshold) || threshold < 50 || threshold > 110 || isNaN(cooldownMinutes) || cooldownMinutes < 1 || cooldownMinutes > 60) {
+          showToast(t("overheat_invalid") || "Invalid threshold (50-110) or cooldown (1-60).");
+          return;
+        }
+        try {
+          const res = await fetch("/api/settings/overheatGuard", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ threshold: threshold, cooldownSeconds: cooldownMinutes * 60 })
+          });
+          const data = await res.json();
+          showToast(data.msg || (data.ok ? "Saved." : "Error."));
+          if (data.ok) requestAuthoritativeState();
+        } catch (err) {
+          showToast("Network error.");
+        }
+      });
+    }
+    // OVERHEAT GUARD END
     // NIGHT LOCK OPTION END
     pirMappingList.addEventListener("change", (event) => {
       const target = event.target instanceof Element ? event.target : null;
