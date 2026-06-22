@@ -480,9 +480,13 @@ On startup, StorageLayer reads all persisted state and compares timer end-timest
 | Web UI not loading | Ensure LittleFS image was uploaded (`pio run -t uploadfs`). Verify `index.html` exists in the `data/` directory. |
 | Relays not responding | Check GPIO wiring matches `Config.h`. Verify `RELAY_ACTIVE_LOW` matches your relay board polarity. |
 | PIR sensors not triggering | Confirm PIR wiring (3.3V, GND, OUT). Adjust `PIR_DEBOUNCE_MS` if needed. Ensure relay is in AUTO mode. |
+| PIR sensors trigger while disconnected | Configure PIR GPIOs with pull-down/pull-up so they don’t float. Firmware sets PIR pins to `INPUT_PULLDOWN` by default in `ControlEngine::begin()` to prevent phantom triggers when sensors are unplugged. |
 | Timer not surviving reboot | Verify NTP or `time_sync` WebSocket message has been received before setting a timer. Check serial monitor for "timer.blocked" errors. |
 | Night Lock not activating | Confirm the Night Lock option is enabled in System Settings. Verify time is synchronized (NTP or browser `time_sync`). Check `DAY_START_HOUR` and `NIGHT_START_HOUR` in Config.h. |
 | WebSocket connection drops | Check WiFi signal strength. Reduce `WS_MAX_CLIENTS` if too many browsers are connected. Monitor serial output for stack overflow warnings. |
+| Overheat cooldown mode (temperature feature) | Firmware monitors ESP32 chip temperature and can suspend relays when a configured threshold is exceeded. In the UI, configure the threshold (°C) and cooldown duration in **System Settings**. If overheat happens too frequently, increase the threshold or reduce load/airflow constraints. |
+
+
 
 ---
 
