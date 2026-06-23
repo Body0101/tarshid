@@ -144,14 +144,18 @@ void ControlEngine::tickHousekeeping()
           }
           clearEnergyTrackingLocked(relay);
           
-          if (runtime_->relays[i].appliedState == RelayState::ON)
-        {
-          runtime_->relays[i].appliedState = RelayState::OFF;
-          runtime_->relays[i].appliedSource = ControlSource::NONE;
-          digitalWrite(runtime_->relays[i].pin, relayOutputLevel(RelayState::OFF));
-          closeActiveOnWindowLocked(runtime_->relays[i], nowEpoch);
-
-          publishEventLocked("OFF", "relay.overheat_forced_off", String(runtime_->relays[i].name) + " forced OFF by Overheat Guard.", static_cast<int>(i), true);
+          if (relay.appliedState == RelayState::ON) {
+            closeActiveOnWindowLocked(relay, nowEpoch);
+          }
+          relay.appliedState = RelayState::OFF;
+          relay.appliedSource = ControlSource::NONE;
+          relay.autoHoldUntilEpoch = 0;
+          
+          digitalWrite(relay.pin, relayOutputLevel(RelayState::OFF));
+          storage_->persistRelayState(i, relay.appliedState, relay.appliedSource);
+          storage_->persistRelayStats(i, relay.stats);
+          
+          publishEventLocked("OFF", "relay.overheat_forced_off", String(relay.name) + " forced OFF by Overheat Guard.", static_cast<int>(i), true);
         }
       }
     }

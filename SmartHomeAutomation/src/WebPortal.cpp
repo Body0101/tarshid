@@ -517,7 +517,7 @@ void WebPortal::setupRoutes()
     strncpy(engine_->getRuntime()->wifiPassword, password.c_str(), 64);
     engine_->getRuntime()->wifiPassword[64] = '\0';
 
-    if (doc.containsKey("backendUrl") && doc["backendUrl"].is<String>()) {
+    if (doc["backendUrl"].is<String>()) {
       String url = doc["backendUrl"].as<String>();
       if (url.length() < 128) {
         storage_->persistBackendUrl(url);
