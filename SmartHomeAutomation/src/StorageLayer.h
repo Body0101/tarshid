@@ -82,7 +82,6 @@ void setLogsEnabled(bool enabled);
   // NETWORK CONFIG START
   void persistWifiConfig(const String& ssid, const String& password);
   void persistTimezoneOffset(int32_t offsetMins);
-  void persistBackendUrl(const String& url);
   // NETWORK CONFIG END
 
   void appendEvent(uint64_t epoch, const String &type, const String &message, int channel = -1);

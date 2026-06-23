@@ -3,6 +3,7 @@
 #include <ArduinoJson.h>
 #include <limits.h>
 #include <vector>
+#include <WiFiClientSecure.h>
 
 #include "Config.h"
 #include "Utils.h"
@@ -180,7 +181,70 @@ void ControlEngine::tickHousekeeping()
           storage_->persistRelayStats(i, relay.stats);
         }
       }
-    } });
+    }
+
+    // NON-BLOCKING WIFI SYNC START
+    // Consume the flag set by POST /api/settings/wifi and initiate the
+    // connection WITHOUT blocking the caller. WiFi.begin() itself is
+    // non-blocking; the radio connects in the background.
+    if (runtime_->pendingNetworkSync) {
+      runtime_->pendingNetworkSync = false;
+      // Guarantee the SoftAP stays alive during and after reconnection.
+      if (WiFi.getMode() != WIFI_AP_STA) {
+        WiFi.mode(WIFI_AP_STA);
+        WiFi.setSleep(false);
+      }
+      WiFi.disconnect(false, false);   // drop old STA without resetting NVS
+      WiFi.begin(runtime_->wifiSsid, runtime_->wifiPassword);
+    }
+
+    // WiFi connection state monitor — detect connect / disconnect transitions
+    // and broadcast toast notifications to all connected WebSocket clients.
+    const bool currentlyConnected = (WiFi.status() == WL_CONNECTED);
+    if (currentlyConnected && !runtime_->wasWifiConnected) {
+      // Transition: disconnected -> connected
+      runtime_->wasWifiConnected = true;
+      if (eventCallback_) {
+        JsonDocument toastDoc;
+        toastDoc["event"] = "toast";
+        toastDoc["type"]  = "success";
+        toastDoc["msg"]   = "Wi-Fi Connected: " + WiFi.localIP().toString();
+        String toastJson;
+        serializeJson(toastDoc, toastJson);
+        eventCallback_(toastJson, false);
+      }
+      // Attempt backend config sync; notify result via another toast.
+      // syncConfigWithBackend() is NOT called inside a lock — it makes an
+      // HTTP request which must never hold stateMutex_.
+    } else if (!currentlyConnected && runtime_->wasWifiConnected) {
+      // Transition: connected -> disconnected
+      runtime_->wasWifiConnected = false;
+    }
+    // NON-BLOCKING WIFI SYNC END
+  });
+
+  // Backend sync and its result toast MUST happen OUTSIDE the stateMutex lock.
+  // HTTPClient::GET() can block for up to several seconds; holding stateMutex_
+  // during that time would starve tickFast() and trigger the WDT.
+  // We use backendSyncDoneForCurrentConnection_ to ensure the sync fires exactly
+  // once per new connection and is re-armed when WiFi drops.
+  if (runtime_->wasWifiConnected && !backendSyncDoneForCurrentConnection_ && strlen(BACKEND_API_URL) > 0) {
+    backendSyncDoneForCurrentConnection_ = true;
+    const bool synced = syncConfigWithBackend();
+    if (eventCallback_) {
+      JsonDocument toastDoc;
+      toastDoc["event"] = "toast";
+      toastDoc["type"]  = synced ? "success" : "error";
+      toastDoc["msg"]   = synced ? "API Linked Successfully!" : "API Sync Failed — check Backend URL.";
+      String toastJson;
+      serializeJson(toastDoc, toastJson);
+      eventCallback_(toastJson, false);
+    }
+  }
+  // Re-arm sync gate when WiFi is disconnected so the next connection fires again.
+  if (!runtime_->wasWifiConnected) {
+    backendSyncDoneForCurrentConnection_ = false;
+  }
 }
 
 void ControlEngine::refreshOutputs()
@@ -193,17 +257,20 @@ void ControlEngine::refreshOutputs()
 }
 
 bool ControlEngine::syncConfigWithBackend() {
-  if (WiFi.status() != WL_CONNECTED || strlen(runtime_->backendUrl) == 0) {
+  if (WiFi.status() != WL_CONNECTED || strlen(BACKEND_API_URL) == 0) {
     return false;
   }
   
   String mac = WiFi.macAddress();
   mac.toUpperCase();
-  String url = String(runtime_->backendUrl) + "/api/device/" + mac + "/config/";
+  String url = String(BACKEND_API_URL) + "/api/device/" + mac + "/config/";
+  
+  WiFiClientSecure client;
+  client.setInsecure();
   
   HTTPClient http;
   http.setTimeout(10000);
-  if (!http.begin(url)) {
+  if (!http.begin(client, url)) {
     return false;
   }
   
@@ -216,7 +283,7 @@ bool ControlEngine::syncConfigWithBackend() {
   String payload = http.getString();
   http.end();
   
-  DynamicJsonDocument doc(4096);
+  JsonDocument doc;
   DeserializationError err = deserializeJson(doc, payload);
   if (err) {
     return false;

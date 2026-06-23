@@ -119,9 +119,6 @@ void StorageLayer::loadRuntime(SystemRuntime *runtime)
   strncpy(runtime->wifiPassword, storedPass.c_str(), sizeof(runtime->wifiPassword) - 1);
   runtime->wifiPassword[sizeof(runtime->wifiPassword) - 1] = '\0';
   runtime->timezoneOffsetMinutes = preferences_.getInt("tz_offset", 0);
-  String storedUrl = preferences_.getString("backendUrl", "");
-  strncpy(runtime->backendUrl, storedUrl.c_str(), sizeof(runtime->backendUrl) - 1);
-  runtime->backendUrl[sizeof(runtime->backendUrl) - 1] = '\0';
   // NETWORK CONFIG END
   runtime->relays.resize(RELAY_COUNT);
   runtime->pirs.resize(PIR_COUNT);
@@ -592,13 +589,6 @@ void StorageLayer::persistWifiConfig(const String& ssid, const String& password)
 void StorageLayer::persistTimezoneOffset(int32_t offsetMins) {
   if (lock()) {
     preferences_.putInt("tz_offset", offsetMins);
-    unlock();
-  }
-}
-
-void StorageLayer::persistBackendUrl(const String& url) {
-  if (lock()) {
-    preferences_.putString("backendUrl", url);
     unlock();
   }
 }

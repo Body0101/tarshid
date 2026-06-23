@@ -396,6 +396,11 @@ void setup() {
   Serial.begin(115200);
   delay(200);
 
+  Serial.print("\n===================================\n");
+  Serial.print("ESP32 TRUE MAC ADDRESS: ");
+  Serial.println(WiFi.macAddress());
+  Serial.print("===================================\n");
+
   initRuntimeDefaults();
   gStateMutex = xSemaphoreCreateMutex();
   if (!gStateMutex) {

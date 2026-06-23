@@ -641,6 +641,7 @@
 
     input[type="text"],
     input[type="number"],
+    input[type="password"],
     select {
       width: 100%;
       border: 1.5px solid var(--border);
@@ -656,6 +657,7 @@
 
     input[type="text"]:focus,
     input[type="number"]:focus,
+    input[type="password"]:focus,
     select:focus {
       outline: none;
       border-color: var(--accent);
@@ -2033,10 +2035,38 @@
         transition-duration: 0.01ms !important;
       }
     }
+
+    /* ── WebSocket typed toast cards ── */
+    .ws-toast-card {
+      font-family: 'Inter', 'Segoe UI', sans-serif;
+      font-size: 0.875rem;
+      font-weight: 500;
+      padding: 12px 18px;
+      border-radius: 12px;
+      min-width: 220px;
+      max-width: 320px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.35);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      color: #fff;
+      opacity: 0;
+      transform: translateX(40px);
+      transition: opacity .35s ease, transform .35s ease;
+      pointer-events: none;
+    }
+    .ws-toast-card.ws-toast-show {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    .ws-toast-success { background: linear-gradient(135deg, rgba(16,185,129,.9), rgba(5,150,105,.9)); border-left: 4px solid #34d399; }
+    .ws-toast-error   { background: linear-gradient(135deg, rgba(239,68,68,.9),  rgba(185,28,28,.9));  border-left: 4px solid #f87171; }
+    .ws-toast-info    { background: linear-gradient(135deg, rgba(99,102,241,.9), rgba(67,56,202,.9));  border-left: 4px solid #818cf8; }
   </style>
 </head>
 
 <body>
+  <!-- NETWORK TOAST CONTAINER: typed overlay cards (success/error/info) arrive here via WebSocket -->
+  <div id="toastContainer" style="position:fixed;top:20px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:10px;pointer-events:none;"></div>
 
   <!-- ============================================================
      SVG ICON SPRITE (used via <use>)
@@ -2555,13 +2585,9 @@
                 <span data-i18n="wifi_pass_label">Wi-Fi Password</span>
                 <input id="wifiPassInput" type="password" maxlength="64" placeholder="Password">
               </label>
-              <label class="field" style="margin-top: 8px;">
-                <span>Backend API URL</span>
-                <div style="display: flex; gap: 8px;">
-                  <input type="text" id="backendUrlInput" placeholder="Backend API URL (e.g. http://192.168.1.50:8000)">
-                  <button id="saveWifiBtn" class="primary" style="height: unset; padding: 10px 16px; border-radius: 12px;" data-i18n="save_btn">Save</button>
-                </div>
-              </label>
+              <div style="margin-top: 12px;">
+                <button id="saveWifiBtn" class="primary" style="width: 100%;" data-i18n="save_btn">Save</button>
+              </div>
             </div>
             <!-- NETWORK CONFIG END -->
 
@@ -3314,12 +3340,26 @@
     /* ==========================================
        UI Helpers
        ========================================== */
-    function showToast(message) {
-      console.log('[Toast]', message);
-      if (!toast) {
-        alert(message);   // fallback for debugging
-        return;
+    function showToast(message, type) {
+      console.log('[Toast]', type || 'default', message);
+      // TYPED TOAST: stacking overlay cards used for Wi-Fi / API WS notifications.
+      if (type) {
+        const container = document.getElementById("toastContainer");
+        if (container) {
+          const card = document.createElement("div");
+          card.className = "ws-toast-card ws-toast-" + type;
+          card.textContent = translateUiMessage(message);
+          container.appendChild(card);
+          requestAnimationFrame(() => card.classList.add("ws-toast-show"));
+          setTimeout(() => {
+            card.classList.remove("ws-toast-show");
+            card.addEventListener("transitionend", () => card.remove(), { once: true });
+          }, 4000);
+          return;
+        }
       }
+      // LEGACY single-element toast — unchanged for all existing callers.
+      if (!toast) { alert(message); return; }
       toast.textContent = translateUiMessage(message);
       toast.classList.add("show");
       clearTimeout(showToast._timer);
@@ -4067,6 +4107,11 @@
         showToast(msg.error);
         return;
       }
+      // NETWORK TOAST: broadcast from ControlEngine non-blocking WiFi monitor
+      if (msg.event === "toast") {
+        showToast(msg.msg || "", msg.type || "info");
+        return;
+      }
       if (msg.type === "time_request") { syncDeviceTime(); return; }
       // EVENT-DRIVEN: receive rename broadcast from another connected client
       // NO-POLLING: triggered only when the event arrives, never on a timer
@@ -4205,7 +4250,6 @@
     }
     // OVERHEAT GUARD END
     // NETWORK CONFIG START
-    const backendUrlInput = document.getElementById("backendUrlInput");
     if (saveWifiBtn && wifiSsidInput && wifiPassInput) {
       saveWifiBtn.addEventListener("click", async () => {
         const ssid = wifiSsidInput.value.trim();
@@ -4214,17 +4258,21 @@
           showToast(t("wifi_invalid_ssid") || "SSID cannot be empty.");
           return;
         }
-        const backendUrl = backendUrlInput ? backendUrlInput.value.trim() : "";
         try {
           saveWifiBtn.disabled = true;
           const res = await fetch("/api/settings/wifi", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ssid: ssid, password: password, backendUrl: backendUrl })
+            body: JSON.stringify({ ssid: ssid, password: password })
           });
           const data = await res.json();
-          showToast(data.msg || (data.ok ? "Saved." : "Error."));
-          if (data.ok) wifiPassInput.value = "";
+          if (data.ok) {
+            // Show an info toast now; Wi-Fi / API result toasts will arrive via WebSocket.
+            showToast("Credentials saved. Attempting connection...", "info");
+            wifiPassInput.value = "";
+          } else {
+            showToast(data.msg || "Error saving settings.");
+          }
         } catch (err) {
           showToast("Network error.");
         } finally {

@@ -90,4 +90,8 @@ class ControlEngine {
   SemaphoreHandle_t stateMutex_ = nullptr;
   EventCallback eventCallback_;
   uint64_t lastStatsFlushEpoch_ = 0;
+  // True once syncConfigWithBackend() has been called for the current
+  // connection. Reset to false when WiFi drops so the next reconnection
+  // triggers a fresh sync.
+  bool backendSyncDoneForCurrentConnection_ = false;
 };

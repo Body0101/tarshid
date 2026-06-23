@@ -22,6 +22,8 @@ constexpr char AP_PASSWORD[] = "12345678";
 constexpr char STA_SSID[] = "";
 constexpr char STA_PASSWORD[] = "";
 
+constexpr char BACKEND_API_URL[] = "https://tarshidbackenddjango-production.up.railway.app";
+
 constexpr RelayConfig RELAY_CONFIG[] = {
     {26, "Relay A", 60.0f},
     {27, "Relay B", 100.0f},

@@ -484,7 +484,7 @@ void WebPortal::setupRoutes()
     }
 
     JsonDocument doc;
-    if (deserializeJson(doc, body) || !hasOnlyAllowedKeys(doc, {"ssid", "password", "backendUrl"})) {
+    if (deserializeJson(doc, body) || !hasOnlyAllowedKeys(doc, {"ssid", "password"})) {
       response["msg"] = "Invalid JSON structure.";
       String payload;
       serializeJson(response, payload);
@@ -517,21 +517,14 @@ void WebPortal::setupRoutes()
     strncpy(engine_->getRuntime()->wifiPassword, password.c_str(), 64);
     engine_->getRuntime()->wifiPassword[64] = '\0';
 
-    if (doc["backendUrl"].is<String>()) {
-      String url = doc["backendUrl"].as<String>();
-      if (url.length() < 128) {
-        storage_->persistBackendUrl(url);
-        strncpy(engine_->getRuntime()->backendUrl, url.c_str(), 127);
-        engine_->getRuntime()->backendUrl[127] = '\0';
-      }
-    }
-
-    WiFi.disconnect(false, true);
-    delay(100);
-    WiFi.begin(ssid.c_str(), password.c_str());
+    // NON-BLOCKING WIFI SYNC: flag the background task to call WiFi.begin().
+    // We must NOT call WiFi.begin() or delay() here because we are inside the
+    // HTTP WebServer callback. Blocking here causes a WDT reset and drops the
+    // SoftAP, making the UI unreachable.
+    engine_->getRuntime()->pendingNetworkSync = true;
 
     response["ok"] = true;
-    response["msg"] = "Credentials saved. Connecting...";
+    response["msg"] = "Settings saved. Connecting in background...";
     String payload;
     serializeJson(response, payload);
     server_.send(200, "application/json", payload);

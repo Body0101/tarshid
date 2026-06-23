@@ -138,7 +138,15 @@ struct SystemRuntime {
   char wifiSsid[33] = "";
   char wifiPassword[65] = "";
   int32_t timezoneOffsetMinutes = 0;
-  char backendUrl[128] = "";
+  // NON-BLOCKING WIFI SYNC START
+  // Set to true by the HTTP handler after saving new credentials; cleared by
+  // tickHousekeeping() when it actually initiates WiFi.begin(). This keeps
+  // all blocking WiFi calls off the WebServer callback and prevents WDT resets.
+  bool pendingNetworkSync = false;
+  // Tracks the previous WiFi connection state so tickHousekeeping() can detect
+  // connect / disconnect transitions and fire the appropriate toast broadcasts.
+  bool wasWifiConnected = false;
+  // NON-BLOCKING WIFI SYNC END
   // NETWORK CONFIG END
 };
 
